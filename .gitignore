@@ -1,0 +1,12 @@
+# Python-related ignores
+__pycache__/
+*.pyc
+backend/venv/
+backend/cache/
+
+# Node-related ignores
+node_modules/
+
+# Other project folders
+backend/created_datasets/
+logs/
