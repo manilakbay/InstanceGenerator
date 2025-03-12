@@ -1051,17 +1051,37 @@ def main():
 if __name__ == "__main__":
     main()
 
+
 """
 How to run the program:
 
-For area selection:
-python create_instance.py --area_name "Sabadell, Spain" --num_depots 1 --num_customers 25 --num_cs 10 --simplify
-    --demand_option=constant --demand_constant=120
-    --service_time_option=random --service_time_min=0.1 --service_time_max=0.5
-    --battery_capacity_option=user --battery_capacity_value=200.0
-    ... etc.
+### Running with an Area Name:
+```bash
+python create_instance.py --area_name "Sabadell, Spain" \
+    --num_depots 1 --num_customers 25 --num_cs 10 --simplify \
+    --road_types "motorway,trunk,primary,secondary,tertiary,service,unclassified" \
+    --customer_tag "supermarket" \
+    --demand_option constant --demand_constant 120 \
+    --service_time_option random --service_time_min 0.1 --service_time_max 0.5 \
+    --battery_capacity_option user --battery_capacity_value 200.0 \
+    --load_capacity_option user --load_capacity_value 1500.0 \
+    --charging_rate_option user --charging_rate_value 0.3 \
+    --tour_time_limit 10.0 \
+    --instance_name "Sabadell_Example" \
+    --show_arrows
 
-For coordinate selection:
-python create_instance.py --coordinates "41.600,41.590,2.090,2.080" --num_depots 1 --num_customers 25 --num_cs 10 --simplify
-    [plus the demand/vehicle args if desired]
+### Running with Coordinates:
+python create_instance.py --coordinates "41.600,41.590,2.090,2.080" \
+    --num_depots 2 --num_customers 30 --num_cs 5 --simplify \
+    --road_types "motorway,primary,secondary,residential" \
+    --customer_tag "pharmacy" \
+    --demand_option random --demand_range_min 50 --demand_range_max 240 \
+    --service_time_option constant --service_time_constant 0.3 \
+    --battery_capacity_option default \
+    --load_capacity_option user --load_capacity_value 1200.0 \
+    --charging_rate_option default \
+    --tour_time_limit 8.0 \
+    --instance_name "Region_Example"
+
+    
 """

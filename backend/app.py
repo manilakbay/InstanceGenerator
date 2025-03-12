@@ -26,6 +26,8 @@ def serve_react_frontend(path):
 @app.route('/generate-instance', methods=['POST'])
 def generate_instance():
     data = request.json
+
+    # General parameters:
     area_selection_method = data.get('areaSelectionMethod')  # address or coordinates
     area_name = data.get('area')
     coordinates = data.get('coordinates')
@@ -35,8 +37,9 @@ def generate_instance():
     num_cs = data.get('numChargingStations', 5)
     simplify = data.get('simplify', False)
     customer_tag_value = data.get('customerChoice', "supermarket")  # Default to 'supermarket'
+    instance_name = data.get('instanceName', 'instance')
 
-    # NEW FIELDS: demand & service-time
+    # Demand & service-time
     demand_option = data.get('demandOption', 'default')
     demand_constant = data.get('demandConstant', 100)
     demand_range_min = data.get('demandRangeMin', 50)
@@ -46,17 +49,14 @@ def generate_instance():
     service_time_min = data.get('serviceTimeMin', 0.1)
     service_time_max = data.get('serviceTimeMax', 1.0)
 
-    # NEW FIELDS: vehicle config
+    # Vehicle config
     battery_capacity_option = data.get('batteryCapacityOption', 'default')
     battery_capacity_value = data.get('batteryCapacityValue', 100.0)
     load_capacity_option = data.get('loadCapacityOption', 'default')
     load_capacity_value = data.get('loadCapacityValue', 1000.0)
     charging_rate_option = data.get('charginRateOption', 'default')
     charging_rate_value = data.get('chargingRateValue', 0.2)
-
-    # NEW: extract the instance name from the form
-    instance_name = data.get('instanceName', 'instance')
-
+ 
     # Time Limit
     tour_time_limit = data.get('tourTimeLimit', 8)  # default 8 if not provided
 
@@ -81,11 +81,7 @@ def generate_instance():
             "--num_customers", str(num_customers),
             "--num_cs", str(num_cs),
             "--customer_tag", customer_tag_value,
-            "--instance_name", instance_name  # <-- New command-line argument for instance name
-        ])
-
-        # NEW: pass demand & service-time
-        command.extend([
+            "--instance_name", instance_name,  
             "--demand_option", demand_option,
             "--demand_constant", str(demand_constant),
             "--demand_range_min", str(demand_range_min),
@@ -93,20 +89,15 @@ def generate_instance():
             "--service_time_option", service_time_option,
             "--service_time_constant", str(service_time_constant),
             "--service_time_min", str(service_time_min),
-            "--service_time_max", str(service_time_max)
-        ])
-
-        # NEW: pass vehicle config
-        command.extend([
+            "--service_time_max", str(service_time_max),
             "--battery_capacity_option", battery_capacity_option,
             "--battery_capacity_value", str(battery_capacity_value),
             "--load_capacity_option", load_capacity_option,
             "--load_capacity_value", str(load_capacity_value),
             "--charging_rate_option", charging_rate_option,
-            "--charging_rate_value", str(charging_rate_value)
+            "--charging_rate_value", str(charging_rate_value),
+            "--tour_time_limit", str(tour_time_limit)
         ])
-
-        command.extend(["--tour_time_limit", str(tour_time_limit)])
 
         if simplify:
             command.append("--simplify")
@@ -129,15 +120,6 @@ def generate_instance():
             if "Successfully found" in line or "The rest selected randomly" in line:
                 location_message = line.strip()
                 break
-
-        # Directory and file name construction
-        # if area_selection_method == "address":
-        #     area_dir = f"{area_name.split(',')[0].replace(' ', '_')}_{num_customers}"
-        #     dataset_name = f"{area_dir}_{'simplified' if simplify else 'not_simplified'}"
-        # elif area_selection_method == "coordinates":
-        #     coordinates_str = coordinates.replace(',', '_')
-        #     area_dir = f"{coordinates_str}_{num_customers}"
-        #     dataset_name = f"{coordinates_str}_{num_customers}_{'simplified' if simplify else 'not_simplified'}"
 
         # Get custom instance name if provided
         instance_name = data.get('instanceName', '').strip()
