@@ -9,6 +9,7 @@ import Tab from "react-bootstrap/Tab";
 
 function App() {
   const [formData, setFormData] = useState({
+    // General Settings
     areaSelectionMethod: "address",
     area: "",
     coordinates: "",
@@ -20,9 +21,9 @@ function App() {
     customerChoice: "supermarket",
     numChargingStations: 5,
     chargingStationChoice: "default",
-    simplify: false,
+    // simplify: false,
 
-    // New fields: Demand & Service Time
+    //Demand & Service Time
     demandOption: "default",    // "default" | "constant" | "random"
     demandConstant: 100,
     demandRangeMin: 50,
@@ -32,7 +33,7 @@ function App() {
     serviceTimeMin: 0.1,
     serviceTimeMax: 1.0,
 
-    // New fields: Vehicle Config
+    //Vehicle Config
     batteryCapacityOption: "default",    // "default" | "user"
     batteryCapacityValue: 100.0,
     loadCapacityOption: "default",       // "default" | "user"
@@ -176,7 +177,7 @@ function App() {
           className="me-3"
         />
         <h1 className="text-primary mb-0" style={{ fontSize: "1.8rem" }}>
-          Instance Generator for the Electric Vehicle Routing Problems with Road Junctions and Road Types
+          EVRPGen: Instance Generator for the Electric Vehicle Routing Problems with Road Junctions and Road Types
         </h1>
       </div>
 
@@ -360,7 +361,7 @@ function App() {
                         </option>
                       </select>
                     </div>
-                    <div className="form-check mb-3">
+                    {/* <div className="form-check mb-3">
                       <input
                         type="checkbox"
                         name="simplify"
@@ -369,7 +370,7 @@ function App() {
                         onChange={handleChange}
                       />
                       <label className="form-check-label">Simplify Network</label>
-                    </div>
+                    </div> */}
 
                   </Accordion.Body>
                 </Accordion.Item>
