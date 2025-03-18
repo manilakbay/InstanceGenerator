@@ -750,19 +750,20 @@ function App() {
           <div className="row">
             <div className="col-lg-4 col-md-12 mb-3 mb-lg-0">
               <h5 className="text-uppercase">Authors</h5>
-              <p className="mb-0">Mehmet Anil AKBAY, Christian Blum</p>
+              <p className="mb-0">Mehmet Anil AKBAY</p>
+              <p className="mb-0">Christian Blum</p>
             </div>
             <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
               <h5 className="text-uppercase">Useful Links</h5>
               <ul className="list-unstyled">
                 <li>
-                  <a href="https://example.com" className="text-white text-decoration-none">
-                    Example Link
+                  <a href="https://github.com/manilakbay/InstanceGenerator.git" className="text-white text-decoration-none">
+                    Github Repository
                   </a>
                 </li>
                 <li>
-                  <a href="https://example.org" className="text-white text-decoration-none">
-                    Another Link
+                  <a href="https://github.com/manilakbay/InstanceGenerator/tree/main/tutorial" className="text-white text-decoration-none">
+                    Tutorial
                   </a>
                 </li>
               </ul>
@@ -780,9 +781,76 @@ function App() {
             height="30"
             className="me-2"
           />
-          © {new Date().getFullYear()} Your Institution Name. All rights reserved.
+          © {new Date().getFullYear()} Instituto de Investigación en Inteligencia Artificial (IIIA-CSIC). All rights reserved.
+
+          <img
+            src="/logos/miciu-aei.png"
+            alt="Agencia Logo"
+            height="30"
+            className="me-2"
+          />
+
         </div>
       </footer>
+
+
+      {/* <footer className="bg-dark text-white mt-4">
+        <div className="container py-4">
+          <div className="row">
+            <div className="col-lg-4 col-md-12 mb-3 mb-lg-0">
+              <h5 className="text-uppercase">Authors</h5>
+              <p className="mb-0">Mehmet Anil AKBAY, Christian Blum</p>
+            </div>
+            <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
+              <h5 className="text-uppercase">Useful Links</h5>
+              <ul className="list-unstyled">
+                <li>
+                  <a href="https://github.com/manilakbay/InstanceGenerator.git" className="text-white text-decoration-none">
+                    Github Repository
+                  </a>
+                </li>
+                <li>
+                  <a href="https://github.com/manilakbay/InstanceGenerator/tree/main/tutorial" className="text-white text-decoration-none">
+                    Tutorial
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
+              <h5 className="text-uppercase">Contact</h5>
+              <p className="mb-0">
+                Email:{" "}
+                <a href="mailto:makbay@iiia.csic.es" className="text-white text-decoration-none">
+                  makbay@iiia.csic.es
+                </a>
+              </p>
+            </div>
+          </div>
+        </div> */}
+
+        {/* Modified this area: now uses a flexbox that justifies content between the left and right sides. */}
+        {/* <div className="bg-secondary py-2 d-flex justify-content-between align-items-center">
+          <div>
+            <img
+              src="/logos/iiia_csic_logo.png"
+              alt="Institution Logo"
+              height="30"
+              className="me-2"
+            />
+            © {new Date().getFullYear()} Your Institution Name. All rights reserved.
+          </div> */}
+
+          {/* New logo on the right side */}
+          {/* <div>
+            <img
+              src="/logos/miciu-aei.png"
+              alt="MICIU AEI Logo"
+              height="30"
+            />
+          </div>
+        </div>
+      </footer> */}
+
 
     </div>
   );
