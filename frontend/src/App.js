@@ -42,7 +42,10 @@ function App() {
     chargingRateValue: 0.2,
 
     // Time Limit Field (In Hours): 
-    tourTimeLimit: 8
+    tourTimeLimit: 8,
+
+    // Seed for the random number generator
+    randomSeed: 42
   });
 
   const [responseMessage, setResponseMessage] = useState("");
@@ -271,7 +274,22 @@ function App() {
                       onChange={handleChange}
                     />
                     <label className="form-check-label">Show Arrows on Map</label>
-                  </div>
+                    </div>
+                      <div className="mb-3">
+                      <label className="form-label">Random Seed:</label>
+                      <input
+                        type="number"
+                        name="randomSeed"
+                        className="form-control"
+                        value={formData.randomSeed}
+                        onChange={handleChange}
+                        min="0"
+                        required
+                      />
+                      <small className="text-muted">
+                        Use a specific integer seed for reproducibility. Default is 42.
+                      </small>
+                    </div>
                   </Accordion.Body>
                 </Accordion.Item>
 

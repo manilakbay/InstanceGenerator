@@ -60,6 +60,10 @@ def generate_instance():
     # Time Limit
     tour_time_limit = data.get('tourTimeLimit', 8)  # default 8 if not provided
 
+    # Seed for the random number generator
+    random_seed = data.get('randomSeed', 42)  # default = 42 if not provided
+
+
     try:
         # Base directory for outputs
         output_base = "created_datasets"
@@ -96,7 +100,8 @@ def generate_instance():
             "--load_capacity_value", str(load_capacity_value),
             "--charging_rate_option", charging_rate_option,
             "--charging_rate_value", str(charging_rate_value),
-            "--tour_time_limit", str(tour_time_limit)
+            "--tour_time_limit", str(tour_time_limit),
+            "--random_seed", str(random_seed)
         ])
 
         if simplify:

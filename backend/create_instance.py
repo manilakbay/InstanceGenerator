@@ -25,9 +25,9 @@ logging.basicConfig(level=logging.INFO)
 ox.__version__
 
 # Set a fixed random seed for reproducibility
-random_seed = 42
-random.seed(random_seed)
-np.random.seed(random_seed)
+# random_seed = 42
+# random.seed(random_seed)
+# np.random.seed(random_seed)
 
 
 class Instance:
@@ -884,7 +884,16 @@ def main():
     # 3) Time Limit for the Tour Completion
     parser.add_argument('--tour_time_limit', type=float, default=8.0, help='Time limit for the tour completion in hours')
 
+    # 4) User Provided Seed for the Random Number Generator
+    parser.add_argument('--random_seed', type=int, default=42,
+                        help='Random seed for reproducibility. Default=42')
+
+
     args = parser.parse_args()
+
+    # ------------- USE THE USER‐PROVIDED SEED -------------
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
 
     tour_time_limit = args.tour_time_limit
 
