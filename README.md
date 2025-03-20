@@ -94,12 +94,22 @@ To stop the running container:
 If you use this EVRP Instance Generator in your research or projects, please consider citing:
 
 ```latex
-@misc{akbay_blum_evrp2025,
-  title   = {A Web-Based Instance Generator for the Electric Vehicle Routing Problem with Road Junctions and Road Types},
+
+@article{akbay_blum_evrp2025,
+  title   = {EVRPGen: A Web-Based Instance Generator for the Electric Vehicle Routing Problem with Road Junctions and Road Types},
   author  = {Mehmet Anil Akbay and Christian Blum},
-  year    = {2023},
-  howpublished = {\url{https://github.com/...}}  
+  journal = {Software Impacts},
+  year    = {2025},
+  note    = {Under review}
 }
+
+@misc{akbay_blum_evrp2025,
+  title   = {EVRPGen: A Web-Based Instance Generator for the Electric Vehicle Routing Problem with Road Junctions and Road Types},
+  author  = {Mehmet Anil Akbay and Christian Blum},
+  year    = {2025},
+  howpublished = {\url{https://github.com/manilakbay/InstanceGenerator}}
+}
+
 ```
 
 For additional details, check the `/tutorial` folder or contact:
