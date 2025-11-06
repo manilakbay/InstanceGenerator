@@ -473,10 +473,22 @@ def extract_pois(area_name, tags):
             logging.warning(f"No POIs found for {tags} in {area_name}")
         return pois
     except ox._errors.InsufficientResponseError as e:
-        logging.error(f"Error fetching POIs for {tags} in {area_name}: {e}")
+        logging.warning(f"Error fetching POIs for {tags} in {area_name}: {e}")
         return pd.DataFrame()
+    except (TypeError, ValueError) as e:
+        # Handle geocoding errors gracefully - these are expected for some place names
+        error_msg = str(e)
+        if "could not geocode" in error_msg.lower() or "geometry" in error_msg.lower() or "polygon" in error_msg.lower():
+            # This is expected for some place names - silently return empty DataFrame
+            # The script will use random nodes from the graph instead
+            logging.info(f"Could not geocode '{area_name}' for POI extraction with tags {tags}. Will use random nodes from graph.")
+            return pd.DataFrame()
+        else:
+            # Re-raise if it's a different TypeError/ValueError
+            logging.warning(f"Unexpected error fetching POIs for {tags} in {area_name}: {e}")
+            return pd.DataFrame()
     except Exception as e:
-        logging.error(f"Unexpected error fetching POIs for {tags} in {area_name}: {e}")
+        logging.warning(f"Unexpected error fetching POIs for {tags} in {area_name}: {e}")
         return pd.DataFrame()
 
 def extract_road_crossings(G):
