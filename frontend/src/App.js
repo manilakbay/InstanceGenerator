@@ -54,6 +54,30 @@ function App() {
   const [summaryData, setSummaryData] = useState(null);
   const [generatedKey, setGeneratedKey] = useState(Date.now());
 
+  // API Base URL - uses environment variable or same origin (works in both dev and production)
+  const API_BASE_URL = process.env.REACT_APP_API_URL || window.location.origin;
+
+  // Helper function to format error messages for display
+  const formatErrorMessage = (errorMsg) => {
+    if (!errorMsg) return errorMsg;
+    
+    // Replace line breaks with HTML breaks for better formatting
+    let formatted = errorMsg.replace(/\n/g, '<br>');
+    
+    // Style the warning emoji
+    formatted = formatted.replace(/⚠️/g, '<span style="font-size: 1.2em;">⚠️</span>');
+    
+    // Make headings bold
+    formatted = formatted.replace(/(INSUFFICIENT[^:]+:)/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/(SOLUTIONS?:)/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/(ASSIGNMENT ERROR:)/g, '<strong>$1</strong>');
+    
+    // Style numbered lists (1., 2., 3., etc.)
+    formatted = formatted.replace(/(\d+\.\s)/g, '<strong>$1</strong>');
+    
+    return formatted;
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData({
@@ -79,7 +103,7 @@ function App() {
     setSummaryData(null);
 
     try {
-      const response = await fetch("http://localhost:5000/generate-instance", {
+      const response = await fetch(`${API_BASE_URL}/generate-instance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -89,17 +113,23 @@ function App() {
 
       if (response.ok) {
         setResultLinks({
-          dataset: `http://localhost:5000${data.dataset_url}`,
-          htmlVisualization: `http://localhost:5000${data.html_visualization_url}`,
+          dataset: `${API_BASE_URL}${data.dataset_url}`,
+          htmlVisualization: `${API_BASE_URL}${data.html_visualization_url}`,
           road_colors: data.road_colors,
         });
         setSummaryData(data.summary_data);
         setResponseMessage(data.message);
         console.log("Full Response Data:", data);
       } else {
-        setResponseMessage(
-          data.message || "Error occurred while generating the instance."
-        );
+        // Check if it's a structured error
+        if (data.error && (data.type === 'validation_error' || data.type === 'generation_error')) {
+          // Format validation errors nicely
+          setResponseMessage(data.message);
+        } else {
+          setResponseMessage(
+            data.message || "Error occurred while generating the instance."
+          );
+        }
       }
     } catch (error) {
       console.error("Error submitting form:", error);
@@ -680,37 +710,84 @@ function App() {
                 {/* Swap the order: Generated Instance tab appears first */}
                 <Tab eventKey="generated" title="Generated Instance">
                   {responseMessage && (
-                    <div className="alert alert-info">{responseMessage}</div>
+                    <div 
+                      className={`alert ${
+                        responseMessage.includes('⚠️') || 
+                        responseMessage.includes('INSUFFICIENT') || 
+                        responseMessage.includes('ASSIGNMENT ERROR') ||
+                        responseMessage.includes('SOLUTIONS')
+                          ? 'alert-danger' 
+                          : 'alert-info'
+                      }`}
+                      style={{ 
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '0.95rem',
+                        lineHeight: '1.6',
+                        marginBottom: '1rem'
+                      }}
+                      dangerouslySetInnerHTML={{ __html: formatErrorMessage(responseMessage) }}
+                    />
                   )}
                   <div className="text-center mb-3">
                     {resultLinks && (
                       <>
                         <a
+                          // href={resultLinks.dataset}
+                          // className="btn btn-success me-2"
+                          // target="_blank"
+                          // rel="noopener noreferrer"
+
                           href={resultLinks.dataset}
+                          download
                           className="btn btn-success me-2"
-                          target="_blank"
-                          rel="noopener noreferrer"
                         >
                           Download Dataset
                         </a>
-                        {resultLinks?.htmlVisualization && (
+                        {/* {resultLinks?.htmlVisualization && (
                           <a
+                            // href={resultLinks.htmlVisualization}
+                            // className="btn btn-info me-2"
+                            // target="_blank"
+                            // rel="noopener noreferrer"
                             href={resultLinks.htmlVisualization}
+                            download
                             className="btn btn-info me-2"
-                            target="_blank"
-                            rel="noopener noreferrer"
                           >
                             Download HTML Visualization
                           </a>
-                        )}
+                        )} */}
+                           {resultLinks.htmlVisualization && (
+                            <>
+                              {/* view inline */}
+                              <a
+                                href={resultLinks.htmlVisualization}
+                                className="btn btn-info me-2"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                View HTML Visualization
+                              </a>
+                              {/* download */}
+                              <a
+                                href={resultLinks.htmlVisualization}
+                                download={`${formData.instanceName || 'instance'}.html`}
+                                className="btn btn-info me-2"
+                              >
+                                Download HTML Visualization
+                              </a>
+                            </>
+                           )}
                         <a
-                          href={`${resultLinks.dataset.replace(
-                            ".txt",
-                            "_summary.txt"
-                          )}`}
+                          // href={`${resultLinks.dataset.replace(
+                          //   ".txt",
+                          //   "_summary.txt"
+                          // )}`}
+                          // className="btn btn-warning"
+                          // target="_blank"
+                          // rel="noopener noreferrer"
+                          href={`${resultLinks.dataset.replace(".txt", "_summary.txt")}`}
+                          download
                           className="btn btn-warning"
-                          target="_blank"
-                          rel="noopener noreferrer"
                         >
                           Download Summary File
                         </a>

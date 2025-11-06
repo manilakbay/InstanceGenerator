@@ -1,12 +1,59 @@
 # Python-related ignores
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
 backend/venv/
+backend/env/
+backend/ENV/
+*.egg-info/
+dist/
+build/
+
+# Backend specific
 backend/cache/
+backend/created_datasets/
+backend/logs/
+*.log
+
+# Environment variables (CRITICAL - don't commit these!)
+.env
+.env.local
+.env.production
+.env.development
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
 
 # Node-related ignores
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/build/
+frontend/.pnp
+.pnp.js
 
-# Other project folders
-backend/created_datasets/
-logs/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+*.dockerignore
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+allfiles.tgz
+
+# Temporary files
+*.tmp
+*.bak
+*.backup

@@ -15,19 +15,84 @@ import csv
 from shapely.geometry import Point
 import logging
 import hashlib
+import time
+from contextlib import contextmanager
+import warnings
+from datetime import datetime
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Suppress pandas deprecation warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning, module='pandas')
+warnings.filterwarnings('ignore', category=FutureWarning, module='pandas')
+
+# Setup logging - configure once
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remove default handlers to avoid duplicates
+if logger.handlers:
+    logger.handlers.clear()
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# Global variable for timing log file (will be set in main())
+timing_log_file = None
+
+# Configure OSMnx to use a shared cache directory in the project
+# This ensures both direct execution and subprocess execution use the same cache
+script_dir = os.path.dirname(os.path.abspath(__file__))
+cache_dir = os.path.join(script_dir, 'cache')
+os.makedirs(cache_dir, exist_ok=True)
+ox.settings.use_cache = True
+ox.settings.cache_folder = cache_dir
+print(f"OSMnx cache configured: {cache_dir}")
+print(f"OSMnx use_cache: {ox.settings.use_cache}")
 
 # Configure osmnx to use drivable roads and to retain all information
-logging.basicConfig(level=logging.INFO)
-
 ox.__version__
 
+# Timing context manager
+@contextmanager
+def timer(step_name):
+    """Context manager to time execution of code blocks"""
+    start_time = time.time()
+    msg_start = f"STARTING: {step_name}"
+    print(f"\n{'='*60}")
+    print(f"⏱️  {msg_start}")
+    print(f"{'='*60}")
+    
+    # Log to file
+    if timing_log_file:
+        timing_log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg_start}\n")
+        timing_log_file.flush()
+    
+    try:
+        yield
+    finally:
+        elapsed = time.time() - start_time
+        minutes = int(elapsed // 60)
+        seconds = elapsed % 60
+        msg_complete = f"COMPLETED: {step_name}"
+        msg_time = f"TIME: {minutes}m {seconds:.2f}s ({elapsed:.2f} seconds)"
+        
+        print(f"\n{'='*60}")
+        print(f"✅ {msg_complete}")
+        print(f"⏱️  {msg_time}")
+        print(f"{'='*60}\n")
+        
+        # Log to file
+        if timing_log_file:
+            timing_log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg_complete} - {msg_time}\n")
+            timing_log_file.flush()
+
 # Set a fixed random seed for reproducibility
-# random_seed = 42
-# random.seed(random_seed)
-# np.random.seed(random_seed)
+#random_seed = 42
+#random.seed(random_seed)
+#np.random.seed(random_seed)
 
 
 class Instance:
@@ -365,10 +430,6 @@ def parse_speed(speed_str):
         logging.warning(f"Could not parse speed from '{speed_str}'. Defaulting to 50 km/h.")
         return 50
 
-def extract_network(area_name):
-    G = ox.graph_from_place(area_name, network_type='drive')
-    return G
-
 def extract_network(area=None, coordinates=None, network_type='drive', road_types=None):
     if not area and not coordinates:
         raise ValueError("Either area name or coordinates must be provided.")
@@ -376,9 +437,14 @@ def extract_network(area=None, coordinates=None, network_type='drive', road_type
     custom_filter = build_custom_filter(road_types) if road_types else None
 
     if area:
+        print(f"📡 Fetching network for area: {area}")
+        start = time.time()
         G = ox.graph_from_place(area, network_type=network_type, custom_filter=custom_filter)
+        elapsed = time.time() - start
+        print(f"   ✅ Network fetched: {len(G.nodes)} nodes, {len(G.edges)} edges in {elapsed:.2f}s")
     elif coordinates:
-        # If 4 values, treat as bounding box; if more than 4 and even, treat as polygon.
+        print(f"📡 Fetching network for coordinates...")
+        start = time.time()
         if len(coordinates) == 4:
             north, south, east, west = coordinates
             G = ox.graph_from_bbox(north, south, east, west, network_type=network_type, custom_filter=custom_filter)
@@ -390,6 +456,8 @@ def extract_network(area=None, coordinates=None, network_type='drive', road_type
             G = ox.graph_from_polygon(polygon, network_type=network_type, custom_filter=custom_filter)
         else:
             raise ValueError("Invalid coordinates provided. Provide either 4 values (bounding box) or an even number greater than 4 (polygon).")
+        elapsed = time.time() - start
+        print(f"   ✅ Network fetched: {len(G.nodes)} nodes, {len(G.edges)} edges in {elapsed:.2f}s")
     return G
 
 
@@ -572,6 +640,7 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
     for key in possible_keys:
         customer_tags = {key: customer_tag_value}
         print("CUSTOMER TAGS: ", customer_tags)
+        start = time.time()
         if area_name:
             customer_pois = extract_pois(area_name, customer_tags)
         elif bbox:
@@ -590,6 +659,8 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
                 customer_pois = ox.geometries_from_bbox(north, south, east, west, tags=customer_tags)
             except ox._errors.InsufficientResponseError:
                 customer_pois = pd.DataFrame()
+        elapsed = time.time() - start
+        print(f"   POI fetch for {key}={customer_tag_value}: {elapsed:.2f}s, found {len(customer_pois)} POIs")
         if not customer_pois.empty:
             logging.info(f"Found {len(customer_pois)} customer POIs with '{key}={customer_tag_value}'")
             break
@@ -605,17 +676,23 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
 
     # Fetch POIs for depots, trying multiple tags
     depot_pois = pd.DataFrame()
+    start = time.time()
     for depot_tags in depot_tags_list:
         depot_pois = extract_pois(area_name, depot_tags)
         if not depot_pois.empty:
             break
+    elapsed = time.time() - start
+    print(f"   Depot POI fetch: {elapsed:.2f}s, found {len(depot_pois)} POIs")
 
     # Fetch POIs for charging stations, trying multiple tags
     charging_station_pois = pd.DataFrame()
+    start = time.time()
     for charging_station_tags in charging_station_tags_list:
         charging_station_pois = extract_pois(area_name, charging_station_tags)
         if not charging_station_pois.empty:
             break
+    elapsed = time.time() - start
+    print(f"   Charging station POI fetch: {elapsed:.2f}s, found {len(charging_station_pois)} POIs")
 
     logging.info(f"Number of customer POIs: {len(customer_pois)}")
     logging.info(f"Number of depot POIs: {len(depot_pois)}")
@@ -628,21 +705,8 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
     all_nodes = list(G.nodes())
 
     # Function to add nodes while ensuring no overlap
-    def add_unique_nodes(nodes_set, pois, num_required, used_nodes):
-        for _, row in pois.iterrows():
-            if len(nodes_set) >= num_required:
-                break
-            nearest_node = ox.distance.nearest_nodes(G, row.geometry.x, row.geometry.y)
-            if nearest_node not in used_nodes:
-                nodes_set.add(nearest_node)
-                used_nodes.add(nearest_node)
-        while len(nodes_set) < num_required:
-            candidate = random.choice(all_nodes)
-            if candidate not in used_nodes:
-                nodes_set.add(candidate)
-                used_nodes.add(candidate)
-
-    def add_unique_nodes(nodes_set, pois, num_required, used_nodes):
+    def add_unique_nodes(nodes_set, pois, num_required, used_nodes, node_type_name="nodes"):
+        # First, try to use POIs
         for _, row in pois.iterrows():
             if len(nodes_set) >= num_required:
                 break
@@ -660,23 +724,50 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
                 nodes_set.add(nearest_node)
                 used_nodes.add(nearest_node)
 
+        # Check if we have enough available nodes before trying to fill
+        available_nodes_count = len(all_nodes) - len(used_nodes)
+        remaining_needed = num_required - len(nodes_set)
+        
+        if remaining_needed > available_nodes_count:
+            raise ValueError(
+                f"⚠️  INSUFFICIENT NODES ERROR: Cannot assign {num_required} {node_type_name}. "
+                f"Only {available_nodes_count} nodes available in the network, but still need {remaining_needed} more. "
+                f"Total graph nodes: {len(all_nodes)}, already used: {len(used_nodes)}. "
+                f"Please either:\n"
+                f"  1. Decrease the number of requested {node_type_name}, or\n"
+                f"  2. Increase the area size, or\n"
+                f"  3. Include more road types in the network extraction."
+            )
+        
+        # Add safety counter to prevent infinite loop
+        max_attempts = len(all_nodes) * 10  # Reasonable upper bound
+        attempts = 0
+        
+        # Fill remaining slots with random nodes from the graph
         while len(nodes_set) < num_required:
+            if attempts >= max_attempts:
+                raise RuntimeError(
+                    f"⚠️  ASSIGNMENT ERROR: Failed to assign {num_required} unique {node_type_name} after {max_attempts} attempts. "
+                    f"Available nodes may be insufficient. "
+                    f"Assigned: {len(nodes_set)}/{num_required}, Available: {available_nodes_count}, Used: {len(used_nodes)}"
+                )
             candidate = random.choice(all_nodes)
             if candidate not in used_nodes:
                 nodes_set.add(candidate)
                 used_nodes.add(candidate)
+            attempts += 1
 
     # Initialize used nodes set
     used_nodes = set()
 
     # Add unique depot nodes
-    add_unique_nodes(depot_nodes, depot_pois, num_depots, used_nodes)
+    add_unique_nodes(depot_nodes, depot_pois, num_depots, used_nodes, "depots")
 
     # Add unique customer nodes
-    add_unique_nodes(customer_nodes, customer_pois, num_customers, used_nodes)
+    add_unique_nodes(customer_nodes, customer_pois, num_customers, used_nodes, "customers")
 
     # Add unique charging station nodes
-    add_unique_nodes(charging_station_nodes, charging_station_pois, num_charging_stations, used_nodes)
+    add_unique_nodes(charging_station_nodes, charging_station_pois, num_charging_stations, used_nodes, "charging stations")
 
     # Convert sets to lists for consistency
     depot_nodes = list(depot_nodes)
@@ -883,11 +974,18 @@ def main():
                         help='If charging_rate_option=user, set this charging rate (kWh/km, for example)')
     # 3) Time Limit for the Tour Completion
     parser.add_argument('--tour_time_limit', type=float, default=8.0, help='Time limit for the tour completion in hours')
-    
+
     # 4) User Provided Seed for the Random Number Generator
     parser.add_argument('--random_seed', type=int, default=42,
-                        help='Random seed for reproducibility. Default=42')
-
+                        help='Random seed for reproducibility. Default=42') 
+    
+    # 5) User Information (from web app)
+    parser.add_argument('--user_ip', type=str, default='',
+                        help='IP address of the user who generated the instance')
+    parser.add_argument('--user_agent', type=str, default='',
+                        help='User-Agent string from the browser')
+    parser.add_argument('--user_referer', type=str, default='',
+                        help='HTTP Referer header')
 
     args = parser.parse_args()
 
@@ -954,108 +1052,305 @@ def main():
     dataset_summary_file_path = os.path.join(base_dir, dataset_summary_file_name)
     visualization_file_path = os.path.join(base_dir, visualization_file)
 
-
-    print("AREA NAME:")
-    print(area_name)
-
-    G = extract_network(area=area_name, coordinates=coordinates, road_types=road_types)
-    G = extract_network(area=area_name, coordinates=coordinates, road_types=road_types)
-
-    # Largest strongly connected subgraph
-    G = extract_largest_scc(G)
-
-    depots, customers, charging_stations, crossings, crossings_count_before, location_message = \
-        categorize_nodes(G, num_depots, num_customers, num_cs, area_name, customer_tag_value, bbox)
-
-    print(location_message)
-
-    print("NUM OF TOTAL NODES:")
-    print(num_depots + num_cs + num_customers)
-    print("NUM ASSIGNED:")
-    print(len(depots)+len(customers)+len(charging_stations)+len(crossings))
-    total_num_nodes = num_depots + num_cs + num_customers
-    total_num_of_nodes_assigned = len(depots)+len(customers)+len(charging_stations)+len(crossings)
-    if total_num_nodes > total_num_of_nodes_assigned:
-        raise ValueError("Extracted network does not contain the desired amount of nodes. "
-                         "Either decrease the number of nodes given or increase the area size!")
-
-    print(f"Number of crossings before simplification: {crossings_count_before}")
-    print(f"Number of nodes before simplification: {len(G.nodes)}")
-    assign_edge_attributes(G)
-
-    if args.simplify:
-        G, crossings = simplify_network(G, depots, customers, charging_stations, crossings)
-
-    remove_dead_end_crossings(G, depots, customers, charging_stations, crossings)
-    assign_edge_attributes(G)
-    visualize_network(G, depots, customers, charging_stations, crossings, visualization_file_path, show_arrows=args.show_arrows)
-
-    if nx.is_strongly_connected(G):
-        print("The graph is already strongly connected.")
-    if not G.is_directed():
-        raise ValueError("Graph is not directed. Ensure that the graph extraction and processing is for a directed graph.")
+    # Create timing log file
+    timing_log_path = os.path.join(base_dir, f"{base_file_name}_timing.log")
+    global timing_log_file
+    timing_log_file = open(timing_log_path, 'w', encoding='utf-8')
+    
+    # Write header
+    timing_log_file.write(f"{'='*60}\n")
+    timing_log_file.write(f"Instance Generation Timing Log\n")
+    timing_log_file.write(f"{'='*60}\n\n")
+    
+    # Write user information (if provided from web app)
+    if args.user_ip or args.user_agent:
+        timing_log_file.write(f"--- USER INFORMATION (Web App Request) ---\n")
+        if args.user_ip:
+            timing_log_file.write(f"IP Address: {args.user_ip}\n")
+        if args.user_agent:
+            # Truncate user agent if too long
+            user_agent = args.user_agent[:200] if len(args.user_agent) > 200 else args.user_agent
+            timing_log_file.write(f"User-Agent: {user_agent}\n")
+        if args.user_referer:
+            timing_log_file.write(f"Referer: {args.user_referer}\n")
+        timing_log_file.write(f"\n")
+    
+    # Write user configuration
+    timing_log_file.write(f"--- USER CONFIGURATION ---\n")
+    timing_log_file.write(f"Instance Name: {base_file_name}\n")
+    timing_log_file.write(f"Area Selection Method: {'Address' if area_name else 'Coordinates'}\n")
+    if area_name:
+        timing_log_file.write(f"Area: {area_name}\n")
     else:
-        print("Graph is directed!")
-
-    for node in G.nodes:
-        in_degree = G.in_degree(node)
-        out_degree = G.out_degree(node)
-        if in_degree == 0 or out_degree == 0:
-            print(f"Node {node} might cause issues as it has only incoming or outgoing edges.")
-
-    instance = Instance()
-
-    instance.tour_time_limit = tour_time_limit
-
-    instance.assign_road_labels(G)
-
-    # We pass the new demand/service_time arguments to populate_from_graph
-    instance.populate_from_graph(
-        G,
-        depots,
-        customers,
-        charging_stations,
-        crossings,
-        demand_option=args.demand_option,
-        demand_constant=args.demand_constant,
-        demand_range_min=args.demand_range_min,
-        demand_range_max=args.demand_range_max,
-        service_time_option=args.service_time_option,
-        service_time_constant=args.service_time_constant,
-        service_time_min=args.service_time_min,
-        service_time_max=args.service_time_max
-    )
-
-    # Duplicate
-    instance.duplicate_nodes_as_junctions()
-
-    # 2) Vehicle config
-    # Add them to instance.vehicle_config
-    veh_config = {}
-    # Battery capacity
+        timing_log_file.write(f"Coordinates: {coordinates_str}\n")
+    
+    timing_log_file.write(f"\n--- NODE CONFIGURATION ---\n")
+    timing_log_file.write(f"Number of Depots: {num_depots}\n")
+    timing_log_file.write(f"Number of Customers: {num_customers}\n")
+    timing_log_file.write(f"Number of Charging Stations: {num_cs}\n")
+    timing_log_file.write(f"Customer Choice: {customer_tag_value}\n")
+    
+    timing_log_file.write(f"\n--- DEMAND CONFIGURATION ---\n")
+    timing_log_file.write(f"Demand Option: {args.demand_option}\n")
+    if args.demand_option == 'constant':
+        timing_log_file.write(f"Constant Demand: {args.demand_constant}\n")
+    elif args.demand_option == 'random':
+        timing_log_file.write(f"Demand Range: {args.demand_range_min} - {args.demand_range_max}\n")
+    
+    timing_log_file.write(f"\n--- SERVICE TIME CONFIGURATION ---\n")
+    timing_log_file.write(f"Service Time Option: {args.service_time_option}\n")
+    if args.service_time_option == 'constant':
+        timing_log_file.write(f"Constant Service Time: {args.service_time_constant} hours\n")
+    elif args.service_time_option == 'random':
+        timing_log_file.write(f"Service Time Range: {args.service_time_min} - {args.service_time_max} hours\n")
+    
+    timing_log_file.write(f"\n--- VEHICLE CONFIGURATION ---\n")
+    timing_log_file.write(f"Battery Capacity Option: {args.battery_capacity_option}\n")
     if args.battery_capacity_option == 'user':
-        veh_config['BatteryCapacity'] = args.battery_capacity_value
-    else:
-        veh_config['BatteryCapacity'] = 100.0  # default
-
-    # Load capacity
+        timing_log_file.write(f"Battery Capacity: {args.battery_capacity_value} kWh\n")
+    timing_log_file.write(f"Load Capacity Option: {args.load_capacity_option}\n")
     if args.load_capacity_option == 'user':
-        veh_config['LoadCapacity'] = args.load_capacity_value
-    else:
-        veh_config['LoadCapacity'] = 1000.0  # default
-
-    # Charging Rate
+        timing_log_file.write(f"Load Capacity: {args.load_capacity_value} kg\n")
+    timing_log_file.write(f"Charging Rate Option: {args.charging_rate_option}\n")
     if args.charging_rate_option == 'user':
-        veh_config['ChragingRate'] = args.charging_rate_value
-    else:
-        veh_config['ChragingRate'] = 0.2  # default
+        timing_log_file.write(f"Charging Rate: {args.charging_rate_value}\n")
+    
+    timing_log_file.write(f"\n--- OTHER CONFIGURATION ---\n")
+    timing_log_file.write(f"Tour Time Limit: {tour_time_limit} hours\n")
+    timing_log_file.write(f"Random Seed: {args.random_seed}\n")
+    timing_log_file.write(f"Network Simplification: {'Enabled' if args.simplify else 'Disabled'}\n")
+    timing_log_file.write(f"Show Arrows: {'Enabled' if args.show_arrows else 'Disabled'}\n")
+    timing_log_file.write(f"Road Types: {', '.join(road_types)}\n")
+    
+    timing_log_file.write(f"\n--- EXECUTION TIMELINE ---\n")
+    timing_log_file.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    timing_log_file.write(f"{'='*60}\n\n")
+    timing_log_file.flush()
 
-    instance.vehicle_config = veh_config
-    instance.save_dataset(dataset_file_path)
-    print("Instance Saved")
+    try:
+        print("AREA NAME:")
+        print(area_name)
 
-    instance.save_summary(dataset_summary_file_path)
-    print("Summary Saved")
+        # Add total timer at the start
+        total_start = time.time()
+
+        # TIMED: Extract network from OSM (THIS IS LIKELY THE SLOWEST PART)
+        with timer("1. Extract Road Network from OSM"):
+            G = extract_network(area=area_name, coordinates=coordinates, road_types=road_types)
+
+        # TIMED: Extract largest strongly connected component
+        with timer("2. Extract Largest Strongly Connected Component"):
+            G = extract_largest_scc(G)
+
+        # Early validation: Check if graph has enough nodes BEFORE categorizing
+        total_nodes_needed = num_depots + num_customers + num_cs
+        available_nodes = len(G.nodes())
+        
+        print(f"\n{'='*60}")
+        print(f"📊 NETWORK VALIDATION")
+        print(f"{'='*60}")
+        print(f"Total nodes in extracted network: {available_nodes}")
+        print(f"Total nodes requested: {total_nodes_needed}")
+        print(f"  - Depots: {num_depots}")
+        print(f"  - Customers: {num_customers}")
+        print(f"  - Charging Stations: {num_cs}")
+        print(f"{'='*60}\n")
+        
+        if available_nodes < total_nodes_needed:
+            error_msg = (
+                f"⚠️  INSUFFICIENT NETWORK NODES ERROR:\n"
+                f"   Requested {total_nodes_needed} nodes (depots: {num_depots}, "
+                f"customers: {num_customers}, charging stations: {num_cs}), "
+                f"but extracted network only contains {available_nodes} nodes.\n\n"
+                f"   SOLUTIONS:\n"
+                f"   1. Decrease the number of requested nodes:\n"
+                f"      - Reduce customers from {num_customers} to at most {available_nodes - num_depots - num_cs}\n"
+                f"      - Or reduce other node types\n"
+                f"   2. Increase the area size to extract more nodes\n"
+                f"   3. Include more road types in the network extraction\n"
+                f"   4. Try a different area with more road network coverage"
+            )
+            print(error_msg)
+            if timing_log_file:
+                timing_log_file.write(f"\n{'='*60}\n")
+                timing_log_file.write(f"VALIDATION ERROR\n")
+                timing_log_file.write(f"{error_msg}\n")
+                timing_log_file.write(f"{'='*60}\n")
+            raise ValueError(error_msg)
+        
+        print(f"✓ Network validation passed: {available_nodes} nodes available for {total_nodes_needed} requested nodes\n")
+
+        # TIMED: Categorize nodes (find POIs, depots, customers, etc.)
+        with timer("3. Categorize Nodes (Find POIs, Depots, Customers, Charging Stations)"):
+            depots, customers, charging_stations, crossings, crossings_count_before, location_message = \
+                categorize_nodes(G, num_depots, num_customers, num_cs, area_name, customer_tag_value, bbox)
+
+        print(location_message)
+
+        # Validate that we got the requested number of each type
+        print(f"\n{'='*60}")
+        print(f"📋 NODE ASSIGNMENT VALIDATION")
+        print(f"{'='*60}")
+        print(f"Depots: {len(depots)}/{num_depots} requested")
+        print(f"Customers: {len(customers)}/{num_customers} requested")
+        print(f"Charging Stations: {len(charging_stations)}/{num_cs} requested")
+        print(f"Crossings: {len(crossings)} (auxiliary nodes)")
+        print(f"{'='*60}\n")
+        
+        # Validate each node type separately
+        validation_errors = []
+        if len(depots) != num_depots:
+            validation_errors.append(f"Depots: requested {num_depots} but assigned {len(depots)}")
+        if len(customers) != num_customers:
+            validation_errors.append(f"Customers: requested {num_customers} but assigned {len(customers)}")
+        if len(charging_stations) != num_cs:
+            validation_errors.append(f"Charging Stations: requested {num_cs} but assigned {len(charging_stations)}")
+        
+        if validation_errors:
+            error_msg = (
+                f"⚠️  NODE ASSIGNMENT ERROR:\n"
+                f"   The following node types were not fully assigned:\n"
+                f"   " + "\n   ".join(validation_errors) + "\n\n"
+                f"   This should not happen if network validation passed. "
+                f"Please report this issue."
+            )
+            print(error_msg)
+            if timing_log_file:
+                timing_log_file.write(f"\n{'='*60}\n")
+                timing_log_file.write(f"ASSIGNMENT ERROR\n")
+                timing_log_file.write(f"{error_msg}\n")
+                timing_log_file.write(f"{'='*60}\n")
+            raise ValueError(error_msg)
+        
+        print(f"✓ All node types successfully assigned!\n")
+
+        print(f"Number of crossings before simplification: {crossings_count_before}")
+        print(f"Number of nodes before simplification: {len(G.nodes)}")
+        
+        # TIMED: Assign edge attributes
+        with timer("4. Assign Edge Attributes"):
+            assign_edge_attributes(G)
+
+        # TIMED: Simplify network (optional)
+        if args.simplify:
+            with timer("5. Simplify Network"):
+                G, crossings = simplify_network(G, depots, customers, charging_stations, crossings)
+
+        # TIMED: Remove dead-end crossings
+        with timer("6. Remove Dead-End Crossings"):
+            remove_dead_end_crossings(G, depots, customers, charging_stations, crossings)
+        
+        # TIMED: Re-assign edge attributes after simplification
+        with timer("7. Re-assign Edge Attributes"):
+            assign_edge_attributes(G)
+        
+        # TIMED: Visualize network (create HTML map)
+        with timer("8. Generate HTML Visualization"):
+            visualize_network(G, depots, customers, charging_stations, crossings, visualization_file_path, show_arrows=args.show_arrows)
+
+        if nx.is_strongly_connected(G):
+            print("The graph is already strongly connected.")
+        if not G.is_directed():
+            raise ValueError("Graph is not directed. Ensure that the graph extraction and processing is for a directed graph.")
+        else:
+            print("Graph is directed!")
+
+        for node in G.nodes:
+            in_degree = G.in_degree(node)
+            out_degree = G.out_degree(node)
+            if in_degree == 0 or out_degree == 0:
+                print(f"Node {node} might cause issues as it has only incoming or outgoing edges.")
+
+        instance = Instance()
+
+        instance.tour_time_limit = tour_time_limit
+
+        # TIMED: Assign road labels
+        with timer("9. Assign Road Labels"):
+            instance.assign_road_labels(G)
+
+        # TIMED: Populate instance from graph
+        with timer("10. Populate Instance from Graph"):
+            instance.populate_from_graph(
+                G,
+                depots,
+                customers,
+                charging_stations,
+                crossings,
+                demand_option=args.demand_option,
+                demand_constant=args.demand_constant,
+                demand_range_min=args.demand_range_min,
+                demand_range_max=args.demand_range_max,
+                service_time_option=args.service_time_option,
+                service_time_constant=args.service_time_constant,
+                service_time_min=args.service_time_min,
+                service_time_max=args.service_time_max
+            )
+
+        # TIMED: Duplicate nodes as junctions
+        with timer("11. Duplicate Nodes as Junctions"):
+            instance.duplicate_nodes_as_junctions()
+
+        # Vehicle config (fast, no timer needed)
+        veh_config = {}
+        # Battery capacity
+        if args.battery_capacity_option == 'user':
+            veh_config['BatteryCapacity'] = args.battery_capacity_value
+        else:
+            veh_config['BatteryCapacity'] = 100.0  # default
+
+        # Load capacity
+        if args.load_capacity_option == 'user':
+            veh_config['LoadCapacity'] = args.load_capacity_value
+        else:
+            veh_config['LoadCapacity'] = 1000.0  # default
+
+        # Charging Rate - FIX: Corrected typo from 'ChragingRate' to 'ChargingRate'
+        if args.charging_rate_option == 'user':
+            veh_config['ChargingRate'] = args.charging_rate_value
+        else:
+            veh_config['ChargingRate'] = 0.2  # default
+
+        instance.vehicle_config = veh_config
+        
+        # TIMED: Save dataset
+        with timer("12. Save Dataset to File"):
+            instance.save_dataset(dataset_file_path)
+        print("Instance Saved")
+
+        # TIMED: Save summary
+        with timer("13. Save Summary File"):
+            instance.save_summary(dataset_summary_file_path)
+        print("Summary Saved")
+        
+        # Print total time summary
+        total_elapsed = time.time() - total_start
+        total_minutes = int(total_elapsed // 60)
+        total_seconds = total_elapsed % 60
+        total_time_msg = f"TOTAL EXECUTION TIME: {total_minutes}m {total_seconds:.2f}s ({total_elapsed:.2f} seconds)"
+        
+        print(f"\n{'#'*60}")
+        print(f"# ⏱️  {total_time_msg}")
+        print(f"{'#'*60}\n")
+        
+        # Write total time to log file
+        if timing_log_file:
+            timing_log_file.write(f"\n{'='*60}\n")
+            timing_log_file.write(f"{total_time_msg}\n")
+            timing_log_file.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            timing_log_file.write(f"{'='*60}\n")
+            timing_log_file.close()
+            print(f"Timing log saved to: {timing_log_path}")
+    
+    except Exception as e:
+        # Ensure log file is closed even on error
+        if timing_log_file:
+            timing_log_file.write(f"\n{'='*60}\n")
+            timing_log_file.write(f"ERROR: {str(e)}\n")
+            timing_log_file.write(f"Failed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            timing_log_file.write(f"{'='*60}\n")
+            timing_log_file.close()
+        raise
 
 if __name__ == "__main__":
     main()

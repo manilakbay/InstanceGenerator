@@ -4,16 +4,20 @@ FROM node:18-alpine AS frontend-builder
 # 1) Set working directory inside the container
 WORKDIR /app/frontend
 
-# 2) Copy ONLY the package.json and package-lock.json first to leverage Docker caching
+# 2) Accept build argument for API URL (defaults to same origin for production)
+ARG REACT_APP_API_URL
+ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+
+# 3) Copy ONLY the package.json and package-lock.json first to leverage Docker caching
 COPY frontend/package*.json ./
 
-# 3) Install dependencies for the frontend
+# 4) Install dependencies for the frontend
 RUN npm install
 
-# 4) Copy the rest of the frontend source code
+# 5) Copy the rest of the frontend source code
 COPY frontend/ ./
 
-# 5) Build the React app for production
+# 6) Build the React app for production
 RUN npm run build
 
 # ------------------- STAGE 2: Set up Python + Flask backend -------------------
