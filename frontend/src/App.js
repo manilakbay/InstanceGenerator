@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
+import "./App.css";
 import { Bar } from "react-chartjs-2";
 import Chart from "chart.js/auto";
 import MyMap from "./MyMap";
 import Accordion from "react-bootstrap/Accordion";
-import Tabs from "react-bootstrap/Tabs";
-import Tab from "react-bootstrap/Tab";
+import Modal from "react-bootstrap/Modal";
+import Button from "react-bootstrap/Button";
+import Joyride, { STATUS, EVENTS } from "react-joyride";
 
 function App() {
   const [formData, setFormData] = useState({
@@ -53,6 +55,11 @@ function App() {
   const [resultLinks, setResultLinks] = useState(null);
   const [summaryData, setSummaryData] = useState(null);
   const [generatedKey, setGeneratedKey] = useState(Date.now());
+  const [showingResultMap, setShowingResultMap] = useState(false);
+  const [showResultsDrawer, setShowResultsDrawer] = useState(false);
+  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [runTour, setRunTour] = useState(false);
 
   // API Base URL - uses environment variable or same origin (works in both dev and production)
   const API_BASE_URL = process.env.REACT_APP_API_URL || window.location.origin;
@@ -101,6 +108,9 @@ function App() {
     setResponseMessage("");
     setResultLinks(null);
     setSummaryData(null);
+    setShowingResultMap(false);
+    setShowResultsDrawer(false);
+    setIsDrawerCollapsed(false);
 
     try {
       const response = await fetch(`${API_BASE_URL}/generate-instance`, {
@@ -119,6 +129,9 @@ function App() {
         });
         setSummaryData(data.summary_data);
         setResponseMessage(data.message);
+        setShowingResultMap(true); // Automatically switch to result map view
+        setShowResultsDrawer(true); // Show results drawer
+        setIsDrawerCollapsed(false); // Open drawer in expanded state
         console.log("Full Response Data:", data);
       } else {
         // Check if it's a structured error
@@ -199,30 +212,136 @@ function App() {
     }
   };
 
-  return (
-    <div className="App">
-      {/* Header */}
-      <div className="d-flex align-items-center justify-content-center px-4 py-3 bg-light">
-        <img
-          src="/logos/iiia_csic_logo.png"
-          alt="Institution Logo"
-          height="50"
-          className="me-3"
-        />
-        <h1 className="text-primary mb-0" style={{ fontSize: "1.8rem" }}>
-          EVRPGen: Instance Generator for the Electric Vehicle Routing Problems with Road Junctions and Road Types
-        </h1>
-      </div>
+  // Guided Tour Steps
+  const tourSteps = useMemo(() => [
+    {
+      target: 'body',
+      placement: 'center',
+      title: 'Welcome to EVRPGen! 🚀',
+      content: (
+        <div>
+          <p>This tool allows you to generate and visualize realistic instances of the <strong>Electric Vehicle Routing Problem with Road Junctions and Road Types</strong>.</p>
+          <p className="mb-0">Let's take a quick tour to get you started!</p>
+        </div>
+      ),
+      disableBeacon: true,
+    },
+    {
+      target: '.sidebar-content',
+      placement: 'right',
+      title: 'Configuration Panel',
+      content: (
+        <div>
+          <p>Configure your problem instance here using the accordion sections:</p>
+          <ul className="text-start mb-0" style={{ fontSize: '0.9rem' }}>
+            <li><strong>📍 General Settings:</strong> Select area by address or coordinates</li>
+            <li><strong>📦 Node Settings:</strong> Set depots, customers, and charging stations</li>
+            <li><strong>📊 Customer Demand:</strong> Configure demand values</li>
+            <li><strong>⏱️ Service Time:</strong> Set service time parameters</li>
+            <li><strong>🚗 Vehicle Config:</strong> Customize battery, load, and charging rates</li>
+            <li><strong>⏰ Tour Time Limit:</strong> Set maximum tour duration</li>
+          </ul>
+        </div>
+      ),
+    },
+    {
+      target: '.map-container',
+      placement: 'left',
+      title: 'Interactive Map',
+      content: (
+        <div>
+          <p>This is the interactive map area where you can:</p>
+          <ul className="text-start mb-0" style={{ fontSize: '0.9rem' }}>
+            <li>Draw bounding boxes or polygons to define your area (if using coordinates)</li>
+            <li>Visualize the generated instance with depots, customers, and charging stations</li>
+            <li>View the road network with different road types color-coded</li>
+          </ul>
+        </div>
+      ),
+    },
+    {
+      target: '.sidebar-footer',
+      placement: 'top',
+      title: 'Generate Instance',
+      content: (
+        <div>
+          <p>Once you've configured all your settings, click this button to generate your instance.</p>
+          <p className="mb-0">The generation process will extract the road network from OpenStreetMap and create a problem instance based on your parameters.</p>
+        </div>
+      ),
+    },
+    {
+      target: '.map-toggle-container',
+      placement: 'bottom',
+      title: 'Map View Toggle',
+      content: (
+        <div>
+          <p>After generating an instance, these buttons allow you to switch between:</p>
+          <ul className="text-start mb-0" style={{ fontSize: '0.9rem' }}>
+            <li><strong>Input Map:</strong> The original map for area selection</li>
+            <li><strong>Result Map:</strong> The generated instance visualization</li>
+          </ul>
+        </div>
+      ),
+      disableBeacon: true,
+    },
+  ], []);
 
-      <div className="container mt-4">
-        {/* First Row: Configuration Panel & Map */}
-        <div className="row">
-          {/* Left Column: Collapsible Configuration Panel (sticky sidebar) */}
-          <div className="col-md-4 mb-4">
-            <div className="card shadow p-4 h-100 sticky-top" style={{ top: "20px" }}>
-              <Accordion defaultActiveKey="0" flush>
-                <Accordion.Item eventKey="0">
-                  <Accordion.Header>General Settings</Accordion.Header>
+  // Joyride callback handler
+  const handleJoyrideCallback = (data) => {
+    const { status, type } = data;
+    
+    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+      setRunTour(false);
+    }
+    
+    // Log tour events for debugging
+    if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
+      // Handle step navigation or missing targets
+      if (type === EVENTS.TARGET_NOT_FOUND && data.step?.target === '.map-toggle-container') {
+        // Skip map toggle step if it doesn't exist yet (only appears after generation)
+        // This is handled automatically by Joyride
+      }
+    }
+  };
+
+  return (
+    <div className="app-container">
+      {/* LEFT SIDEBAR */}
+      <div className="sidebar d-flex flex-column">
+        {/* Sidebar Header */}
+        <div className="sidebar-header">
+          <div className="d-flex justify-content-between align-items-center">
+            <img
+              src="/logos/ApplicationLogo.png"
+              alt="EVRPGen Logo"
+              style={{ maxHeight: '80px', width: 'auto' }}
+              className="sidebar-logo"
+            />
+            <Button
+              variant="link"
+              className="info-button"
+              onClick={() => setShowInfoModal(true)}
+              aria-label="Show application information"
+              title="About EVRPGen"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </Button>
+          </div>
+        </div>
+
+        {/* Scrollable Form Content */}
+        <div className="sidebar-content">
+          <Accordion defaultActiveKey="0" flush>
+            <Accordion.Item eventKey="0">
+              <Accordion.Header>
+                <span className="accordion-icon">📍</span>
+                General Settings
+              </Accordion.Header>
                   <Accordion.Body>
                     <div className="mb-3">
                       <label className="form-label">Select Area Method:</label>
@@ -324,7 +443,10 @@ function App() {
                 </Accordion.Item>
 
                 <Accordion.Item eventKey="2">
-                  <Accordion.Header>Node Settings</Accordion.Header>
+                  <Accordion.Header>
+                    <span className="accordion-icon">📦</span>
+                    Node Settings
+                  </Accordion.Header>
                   <Accordion.Body>
                   <div className="mb-3">
                       <label className="form-label">Number of Depots:</label>
@@ -425,7 +547,10 @@ function App() {
 
 
                 <Accordion.Item eventKey="3">
-                  <Accordion.Header>Customer Demand</Accordion.Header>
+                  <Accordion.Header>
+                    <span className="accordion-icon">📊</span>
+                    Customer Demand
+                  </Accordion.Header>
                   <Accordion.Body>
                     <div className="mb-3">
                       <label className="form-label">Demand Option:</label>
@@ -478,7 +603,10 @@ function App() {
                   </Accordion.Body>
                 </Accordion.Item>
                 <Accordion.Item eventKey="4">
-                  <Accordion.Header>Service Time</Accordion.Header>
+                  <Accordion.Header>
+                    <span className="accordion-icon">⏱️</span>
+                    Service Time
+                  </Accordion.Header>
                   <Accordion.Body>
                     <div className="mb-3">
                       <label className="form-label">Service Time Option:</label>
@@ -539,7 +667,10 @@ function App() {
                   </Accordion.Body>
                 </Accordion.Item>
                 <Accordion.Item eventKey="5">
-                  <Accordion.Header>Vehicle Configuration</Accordion.Header>
+                  <Accordion.Header>
+                    <span className="accordion-icon">🚗</span>
+                    Vehicle Configuration
+                  </Accordion.Header>
                   <Accordion.Body>
                     <div className="mb-3">
                       <label className="form-label">
@@ -635,7 +766,10 @@ function App() {
                 </Accordion.Item>
 
                 <Accordion.Item eventKey="6">
-                  <Accordion.Header>Tour Time Limit</Accordion.Header>
+                  <Accordion.Header>
+                    <span className="accordion-icon">⏰</span>
+                    Tour Time Limit
+                  </Accordion.Header>
                   <Accordion.Body>
                     <div className="mb-3">
                       <label className="form-label">
@@ -654,299 +788,430 @@ function App() {
                   </Accordion.Body>
                 </Accordion.Item>
 
-              </Accordion>
-              <div className="mt-3">
-                <button
-                  type="submit"
-                  className="btn btn-primary w-100"
-                  disabled={loading}
-                  onClick={handleSubmit}
-                >
-                  {loading ? (
-                    <>
-                      {/* Bootstrap Spinner */}
-                      <span 
-                        className="spinner-border spinner-border-sm me-2" 
-                        role="status" 
-                        aria-hidden="true" 
-                      />
-                      Generating...
-                    </>
-                  ) : (
-                    "Generate Instance"
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Map */}
-          <div className="col-md-8 mb-4">
-            <div className="card shadow p-4 h-100">
-              <h5 className="mb-3 text-primary">Map</h5>
-              {/* </div><div style={{ width: "100%", height: "100%", position: "relative" }} */}
-              <div style={{width: "100%", height: "800px", border: "1px solid #ccc", display: "block", margin: "0 auto",}}>
-                <MyMap onCoordinatesSelected={handleCoordinatesSelected} />
-              </div>
-            </div>
-          </div>
+          </Accordion>
         </div>
 
-        
-        {/* Second Row: Results in Tabs */}
-        <div className="row">
-          <div className="col-md-12">
-            <div className="card shadow p-4">
-              <Tabs
-                defaultActiveKey="generated"
-                id="results-tabs"
-                className="mb-3"
-                onSelect={(key) => {
-                  if (key === "generated") {
-                    setGeneratedKey(Date.now());
-                  }
-                }}
+        {/* Sidebar Footer with Generate Button */}
+        <div className="sidebar-footer">
+          <button
+            type="submit"
+            className="btn btn-primary w-100"
+            disabled={loading}
+            onClick={handleSubmit}
+          >
+            {loading ? (
+              <>
+                <span 
+                  className="spinner-border spinner-border-sm me-2" 
+                  role="status" 
+                  aria-hidden="true" 
+                />
+                Generating...
+              </>
+            ) : (
+              "Generate Instance"
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* RIGHT MAIN CONTENT AREA */}
+      <div className="main-content position-relative">
+        {/* Map Toggle Buttons - Only show if results exist */}
+        {resultLinks && (
+          <div className="map-toggle-container">
+            <button
+              className={`map-toggle-btn ${!showingResultMap ? 'active' : ''}`}
+              onClick={() => setShowingResultMap(false)}
+            >
+              Input Map
+            </button>
+            <button
+              className={`map-toggle-btn ${showingResultMap ? 'active' : ''}`}
+              onClick={() => setShowingResultMap(true)}
+            >
+              Result Map
+            </button>
+          </div>
+        )}
+
+        {/* Map Container */}
+        <div className="map-container">
+          {!showingResultMap ? (
+            <div className="map-wrapper">
+              <MyMap onCoordinatesSelected={handleCoordinatesSelected} />
+            </div>
+          ) : (
+            resultLinks?.htmlVisualization && (
+              <iframe
+                key={generatedKey}
+                src={resultLinks.htmlVisualization}
+                title="Instance Visualization"
+                className="result-iframe"
+              />
+            )
+          )}
+        </div>
+
+        {/* Results Drawer - Slides up from bottom */}
+        {showResultsDrawer && summaryData && (
+          <div className={`results-drawer ${isDrawerCollapsed ? 'collapsed' : ''}`}>
+            <div className="results-drawer-header">
+              <div 
+                className="d-flex align-items-center" 
+                style={{ cursor: 'pointer', flex: 1 }}
+                onClick={() => setIsDrawerCollapsed(!isDrawerCollapsed)}
               >
-                {/* Swap the order: Generated Instance tab appears first */}
-                <Tab eventKey="generated" title="Generated Instance">
-                  {responseMessage && (
-                    <div 
-                      className={`alert ${
-                        responseMessage.includes('⚠️') || 
-                        responseMessage.includes('INSUFFICIENT') || 
-                        responseMessage.includes('ASSIGNMENT ERROR') ||
-                        responseMessage.includes('SOLUTIONS')
-                          ? 'alert-danger' 
-                          : 'alert-info'
-                      }`}
-                      style={{ 
-                        whiteSpace: 'pre-wrap',
-                        fontSize: '0.95rem',
-                        lineHeight: '1.6',
-                        marginBottom: '1rem'
-                      }}
-                      dangerouslySetInnerHTML={{ __html: formatErrorMessage(responseMessage) }}
-                    />
-                  )}
-                  <div className="text-center mb-3">
-                    {resultLinks && (
+                <h6 className="mb-0 me-2">Results & Statistics</h6>
+                <button
+                  className="results-drawer-toggle"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsDrawerCollapsed(!isDrawerCollapsed);
+                  }}
+                  aria-label={isDrawerCollapsed ? "Expand drawer" : "Collapse drawer"}
+                >
+                  {isDrawerCollapsed ? '▲' : '▼'}
+                </button>
+              </div>
+              <button
+                className="results-drawer-close"
+                onClick={() => setShowResultsDrawer(false)}
+                aria-label="Close drawer"
+              >
+                ×
+              </button>
+            </div>
+            {!isDrawerCollapsed && (
+              <div className="results-drawer-content">
+                {/* Error/Info Message */}
+                {responseMessage && (
+                  <div 
+                    className={`alert ${
+                      responseMessage.includes('⚠️') || 
+                      responseMessage.includes('INSUFFICIENT') || 
+                      responseMessage.includes('ASSIGNMENT ERROR') ||
+                      responseMessage.includes('SOLUTIONS')
+                        ? 'alert-danger' 
+                        : 'alert-info'
+                    }`}
+                    style={{ 
+                      whiteSpace: 'pre-wrap',
+                      fontSize: '0.875rem',
+                      lineHeight: '1.5',
+                      marginBottom: '1rem'
+                    }}
+                    dangerouslySetInnerHTML={{ __html: formatErrorMessage(responseMessage) }}
+                  />
+                )}
+
+                {/* Download Buttons */}
+                {resultLinks && (
+                  <div className="download-buttons-container">
+                    <a
+                      href={resultLinks.dataset}
+                      download
+                      className="btn btn-success btn-sm"
+                    >
+                      Download Dataset
+                    </a>
+                    {resultLinks.htmlVisualization && (
                       <>
                         <a
-                          // href={resultLinks.dataset}
-                          // className="btn btn-success me-2"
-                          // target="_blank"
-                          // rel="noopener noreferrer"
-
-                          href={resultLinks.dataset}
-                          download
-                          className="btn btn-success me-2"
+                          href={resultLinks.htmlVisualization}
+                          className="btn btn-info btn-sm"
+                          target="_blank"
+                          rel="noopener noreferrer"
                         >
-                          Download Dataset
+                          View HTML
                         </a>
-                        {/* {resultLinks?.htmlVisualization && (
-                          <a
-                            // href={resultLinks.htmlVisualization}
-                            // className="btn btn-info me-2"
-                            // target="_blank"
-                            // rel="noopener noreferrer"
-                            href={resultLinks.htmlVisualization}
-                            download
-                            className="btn btn-info me-2"
-                          >
-                            Download HTML Visualization
-                          </a>
-                        )} */}
-                           {resultLinks.htmlVisualization && (
-                            <>
-                              {/* view inline */}
-                              <a
-                                href={resultLinks.htmlVisualization}
-                                className="btn btn-info me-2"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                View HTML Visualization
-                              </a>
-                              {/* download */}
-                              <a
-                                href={resultLinks.htmlVisualization}
-                                download={`${formData.instanceName || 'instance'}.html`}
-                                className="btn btn-info me-2"
-                              >
-                                Download HTML Visualization
-                              </a>
-                            </>
-                           )}
                         <a
-                          // href={`${resultLinks.dataset.replace(
-                          //   ".txt",
-                          //   "_summary.txt"
-                          // )}`}
-                          // className="btn btn-warning"
-                          // target="_blank"
-                          // rel="noopener noreferrer"
-                          href={`${resultLinks.dataset.replace(".txt", "_summary.txt")}`}
-                          download
-                          className="btn btn-warning"
+                          href={resultLinks.htmlVisualization}
+                          download={`${formData.instanceName || 'instance'}.html`}
+                          className="btn btn-info btn-sm"
                         >
-                          Download Summary File
+                          Download HTML
                         </a>
                       </>
                     )}
+                    <a
+                      href={`${resultLinks.dataset.replace(".txt", "_summary.txt")}`}
+                      download
+                      className="btn btn-warning btn-sm"
+                    >
+                      Download Summary
+                    </a>
                   </div>
-                  <div className="text-center">
-                    {resultLinks?.htmlVisualization && (
-                      <iframe
-                        key={generatedKey}
-                        src={resultLinks.htmlVisualization}
-                        title="Instance Visualization"
-                        style={{
-                          width: "1200px",
-                          height: "1200px",
-                          border: "1px solid #ccc",
-                          display: "block",
-                          margin: "0 auto",
-                        }}
-                      />
+                )}
+
+                {/* Statistics and Charts - Side by Side Layout */}
+                <div className="row">
+                  {/* Left Column: Statistics */}
+                  <div className="col-md-4">
+                    {generalStats.length > 0 && (
+                      <div>
+                        <h6 className="text-secondary mb-3">Instance Statistics:</h6>
+                        <ul className="list-group">
+                          {generalStats.map((stat) => (
+                            <li
+                              key={stat.label}
+                              className="list-group-item d-flex justify-content-between"
+                            >
+                              <strong>{stat.label}:</strong> {stat.value}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
-                </Tab>
-                <Tab eventKey="stats" title="Statistics & Road Type Distribution">
-                  {generalStats.length > 0 && (
-                    <div className="mb-4">
-                      <h6 className="text-secondary">Instance Statistics:</h6>
-                      <ul className="list-group">
-                        {generalStats.map((stat) => (
-                          <li
-                            key={stat.label}
-                            className="list-group-item d-flex justify-content-between"
-                          >
-                            <strong>{stat.label}:</strong> {stat.value}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {roadTypeChartData && (
-                    <div className="mb-4">
-                      <h6 className="text-secondary">Road Type Distribution:</h6>
-                      <Bar data={roadTypeChartData} options={{ responsive: true }} />
-                    </div>
-                  )}
-                </Tab>
-              </Tabs>
-            </div>
+
+                  {/* Right Column: Chart */}
+                  <div className="col-md-8">
+                    {roadTypeChartData && (
+                      <div className="chart-container">
+                        <h6 className="text-secondary mb-3">Road Type Distribution:</h6>
+                        <Bar data={roadTypeChartData} options={{ responsive: true, maintainAspectRatio: false }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
-      {/* New Footer Section */}
-      <footer className="bg-dark text-white mt-4">
-        <div className="container py-4">
-          <div className="row">
-            <div className="col-lg-4 col-md-12 mb-3 mb-lg-0">
-              <h5 className="text-uppercase">Authors</h5>
-              <p className="mb-0">Mehmet Anil AKBAY</p>
-              <p className="mb-0">Christian Blum</p>
-            </div>
-            <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
-              <h5 className="text-uppercase">Useful Links</h5>
-              <ul className="list-unstyled">
-                <li>
-                  <a href="https://github.com/manilakbay/InstanceGenerator.git" className="text-white text-decoration-none">
-                    Github Repository
+
+      {/* Info Modal */}
+      <Modal
+        show={showInfoModal}
+        onHide={() => setShowInfoModal(false)}
+        centered
+        size="lg"
+      >
+        <Modal.Header closeButton className="modal-clean-header">
+          <Modal.Title className="w-100 text-center">EVRPGen</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="about-modal-body">
+          {/* Description */}
+          <p className="lead text-muted text-center mb-2">
+            A tool for generating realistic problem instances of the Electric Vehicle Routing Problem with Road Junctions and Road Types.
+          </p>
+          <p className="text-center text-muted small mb-5">
+          A web-based instance generator for Electric Vehicle Routing Problems (EVRP) with Road Junctions and Road Types, using OpenStreetMap data. Users define an area, specify network components (depots, customers, charging stations, junctions), and customize vehicle parameters. 
+          </p>
+
+          {/* The Research Team */}
+          <div className="mb-5">
+            <h5 className="text-center mb-4">The Research Team</h5>
+            <div className="row g-3">
+              {/* Mehmet Anil AKBAY */}
+              <div className="col-6">
+                <div className="team-member-card text-center">
+                  <img
+                    src="/photos/photo_mehmet.jpg"
+                    alt="Mehmet Anil AKBAY"
+                    className="team-avatar"
+                  />
+                  <h6 className="mt-2 mb-1">Mehmet Anil AKBAY</h6>
+                  <p className="team-role mb-1">Developer & Researcher</p>
+                  <a
+                    href="https://www.iiia.csic.es/es/people/person/?person_id=139"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-decoration-none small"
+                    style={{ color: '#0d6efd' }}
+                  >
+                    IIIA-CSIC Profile
                   </a>
-                </li>
-                <li>
-                  <a href="https://github.com/manilakbay/InstanceGenerator/tree/main/tutorial" className="text-white text-decoration-none">
-                    Tutorial
+                </div>
+              </div>
+
+              {/* Christian Blum */}
+              <div className="col-6">
+                <div className="team-member-card text-center">
+                  <img
+                    src="/photos/cblum_small.png"
+                    alt="Christian Blum"
+                    className="team-avatar"
+                  />
+                  <h6 className="mt-2 mb-1">Christian Blum</h6>
+                  <p className="team-role mb-1">Scientific Advisor</p>
+                  <a
+                    href="https://www.iiia.csic.es/~christian.blum/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-decoration-none small"
+                    style={{ color: '#0d6efd' }}
+                  >
+                    IIIA-CSIC Profile
                   </a>
-                </li>
-              </ul>
-            </div>
-            <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
-              <h5 className="text-uppercase">Contact</h5>
-              <p className="mb-0">Email: <a href="mailto:makbay@iiia.csic.es" className="text-white text-decoration-none">makbay@iiia.csic.es</a></p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="bg-secondary text-center py-2">
-          <img
-            src="/logos/iiia_csic_logo.png"
-            alt="Institution Logo"
-            height="30"
-            className="me-2"
-          />
-          © {new Date().getFullYear()} Instituto de Investigación en Inteligencia Artificial (IIIA-CSIC). All rights reserved.
 
-          <img
-            src="/logos/miciu-aei.png"
-            alt="Agencia Logo"
-            height="30"
-            className="me-2"
-          />
-
-        </div>
-      </footer>
-
-
-      {/* <footer className="bg-dark text-white mt-4">
-        <div className="container py-4">
-          <div className="row">
-            <div className="col-lg-4 col-md-12 mb-3 mb-lg-0">
-              <h5 className="text-uppercase">Authors</h5>
-              <p className="mb-0">Mehmet Anil AKBAY, Christian Blum</p>
-            </div>
-            <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
-              <h5 className="text-uppercase">Useful Links</h5>
-              <ul className="list-unstyled">
-                <li>
-                  <a href="https://github.com/manilakbay/InstanceGenerator.git" className="text-white text-decoration-none">
-                    Github Repository
+          {/* Resources & Documentation */}
+          <div className="mb-5">
+            <h5 className="text-center mb-4">Resources & Documentation</h5>
+            <div className="row g-3">
+              {/* GitHub Repository Card */}
+              <div className="col-4">
+                <div className="resource-list-item">
+                  <div className="d-flex align-items-start mb-2">
+                    <span className="resource-icon me-2">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                      </svg>
+                    </span>
+                    <h6 className="mb-0">Repository</h6>
+                  </div>
+                  <p className="text-muted small mb-3">Source code and documentation.</p>
+                  <a
+                    href="https://github.com/manilakbay/InstanceGenerator.git"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="resource-badge"
+                  >
+                    View Link
                   </a>
-                </li>
-                <li>
-                  <a href="https://github.com/manilakbay/InstanceGenerator/tree/main/tutorial" className="text-white text-decoration-none">
-                    Tutorial
+                </div>
+              </div>
+
+              {/* Tutorial Card */}
+              <div className="col-4">
+                <div className="resource-list-item">
+                  <div className="d-flex align-items-start mb-2">
+                    <span className="resource-icon me-2">📚</span>
+                    <h6 className="mb-0">Tutorial</h6>
+                  </div>
+                  <p className="text-muted small mb-3">Step-by-step guide to generating instances.</p>
+                  <a
+                    href="https://github.com/manilakbay/InstanceGenerator/tree/main/tutorial"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="resource-badge"
+                  >
+                    View Link
                   </a>
-                </li>
-              </ul>
-            </div>
-            <div className="col-lg-4 col-md-6 mb-3 mb-md-0">
-              <h5 className="text-uppercase">Contact</h5>
-              <p className="mb-0">
-                Email:{" "}
-                <a href="mailto:makbay@iiia.csic.es" className="text-white text-decoration-none">
-                  makbay@iiia.csic.es
-                </a>
-              </p>
+                </div>
+              </div>
+
+              {/* The Paper Card */}
+              <div className="col-4">
+                <div className="resource-list-item">
+                  <div className="d-flex align-items-start mb-2">
+                    <span className="resource-icon me-2">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                      </svg>
+                    </span>
+                    <h6 className="mb-0">The Paper</h6>
+                  </div>
+                  <p className="text-muted small mb-3">Scientific publication and research paper.</p>
+                  <a
+                    href="https://www.sciencedirect.com/science/article/pii/S2665963825000387"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="resource-badge"
+                  >
+                    View Link
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
-        </div> */}
 
-        {/* Modified this area: now uses a flexbox that justifies content between the left and right sides. */}
-        {/* <div className="bg-secondary py-2 d-flex justify-content-between align-items-center">
-          <div>
+          {/* Contact */}
+          <div className="mb-4 text-center">
+            <p className="mb-0">
+              <a href="mailto:makbay@iiia.csic.es" className="text-decoration-none">
+                📧 makbay@iiia.csic.es
+              </a>
+            </p>
+          </div>
+
+          {/* Project Affiliations */}
+          <div className="modal-logos">
             <img
               src="/logos/iiia_csic_logo.png"
-              alt="Institution Logo"
-              height="30"
-              className="me-2"
+              alt="IIIA-CSIC Logo"
+              className="affiliation-logo"
             />
-            © {new Date().getFullYear()} Your Institution Name. All rights reserved.
-          </div> */}
-
-          {/* New logo on the right side */}
-          {/* <div>
             <img
               src="/logos/miciu-aei.png"
               alt="MICIU AEI Logo"
-              height="30"
+              className="affiliation-logo"
             />
           </div>
-        </div>
-      </footer> */}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button 
+            variant="outline-primary" 
+            onClick={() => {
+              setShowInfoModal(false);
+              // Small delay to ensure modal is closed before tour starts
+              setTimeout(() => {
+                setRunTour(true);
+              }, 300);
+            }}
+          >
+            Start Guided Tour
+          </Button>
+          <Button variant="secondary" onClick={() => setShowInfoModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
-
+      {/* Guided Tour */}
+      <Joyride
+        steps={tourSteps}
+        run={runTour}
+        continuous={true}
+        showSkipButton={true}
+        showProgress={true}
+        callback={handleJoyrideCallback}
+        styles={{
+          options: {
+            zIndex: 10000,
+            primaryColor: '#0d6efd',
+          },
+          tooltip: {
+            borderRadius: 8,
+            fontSize: 14,
+          },
+          tooltipContainer: {
+            textAlign: 'left',
+          },
+          buttonNext: {
+            backgroundColor: '#0d6efd',
+            fontSize: 14,
+            padding: '8px 16px',
+            borderRadius: 6,
+          },
+          buttonBack: {
+            marginRight: 10,
+            fontSize: 14,
+            padding: '8px 16px',
+            borderRadius: 6,
+          },
+          buttonSkip: {
+            fontSize: 14,
+            color: '#6c757d',
+          },
+        }}
+        locale={{
+          back: 'Back',
+          close: 'Close',
+          last: 'Finish',
+          next: 'Next',
+          skip: 'Skip Tour',
+        }}
+      />
     </div>
   );
 }
