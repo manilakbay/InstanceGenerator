@@ -161,10 +161,15 @@ class Instance:
 
     def populate_from_graph(self, G, depots, customers, charging_station_nodes, crossings,
                             demand_option, demand_constant, demand_range_min, demand_range_max,
-                            service_time_option, service_time_constant, service_time_min, service_time_max):
+                            service_time_option, service_time_constant, service_time_min, service_time_max,
+                            custom_node_data=None):
         """
         Now uses user-defined logic for demands and service times.
+        If custom_node_data is provided, uses those values for specific nodes instead of generating.
+        custom_node_data format: {node_id: {'demand': value, 'service_time': value}}
         """
+        if custom_node_data is None:
+            custom_node_data = {}
 
         road_speeds = {}
         road_speed_info = {}
@@ -219,8 +224,15 @@ class Instance:
 
         # Add customers
         for node_id in customers:
-            demand_value = get_demand()
-            service_time_value = get_service_time()
+            # Check if this node has custom demand/service_time from uploaded file
+            if node_id in custom_node_data:
+                node_data = custom_node_data[node_id]
+                demand_value = node_data.get('demand', get_demand())
+                service_time_value = node_data.get('service_time', get_service_time())
+            else:
+                demand_value = get_demand()
+                service_time_value = get_service_time()
+            
             self.add_node(node_id, 'c', G.nodes[node_id]['x'], G.nodes[node_id]['y'],
                           demand=demand_value, service_time=service_time_value)
             self.node_index[node_id] = node_counter
@@ -624,9 +636,12 @@ def find_unreachable_nodes(G):
     unreachable = [node for component in scc if component != largest_scc for node in component]
     return unreachable
 
-def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_name, customer_tag_value, bbox=None):
+def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_name, customer_tag_value, bbox=None, uploaded_file_path=None):
     """
     Categorizes nodes into depots, customers, charging stations, and actual road crossings, with logic to handle POI counts.
+    If uploaded_file_path is provided, reads coordinates from CSV file and maps them to nearest nodes.
+    Returns: (depots, customers, charging_stations, crossings, crossings_count, message, custom_node_data)
+    where custom_node_data is a dict mapping node_id to {'demand': value, 'service_time': value}
     """
     # List of keys to try in priority order
     possible_keys = ['shop', 'amenity', 'leisure', 'healthcare', 'landuse', 'building']
@@ -715,7 +730,208 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
     customer_nodes = set()
     charging_station_nodes = set()
     all_nodes = list(G.nodes())
+    
+    # Dictionary to store custom demands and service times from uploaded file
+    custom_node_data = {}  # {node_id: {'demand': value, 'service_time': value}}
 
+    # Calculate bounding box from graph or bbox parameter (for coordinate validation)
+    graph_bbox = None
+    if bbox:
+        # bbox is provided (coordinates-based selection)
+        if len(bbox) == 4:
+            north, south, east, west = bbox
+            graph_bbox = (north, south, east, west)
+        else:
+            # Polygon: compute bounding box from vertices
+            # bbox format: lat1,lon1,lat2,lon2,lat3,lon3,...
+            lats = []
+            lngs = []
+            for idx in range(0, len(bbox), 2):
+                if idx + 1 < len(bbox):
+                    lats.append(bbox[idx])
+                    lngs.append(bbox[idx + 1])
+            if lats and lngs:
+                north, south, east, west = max(lats), min(lats), max(lngs), min(lngs)
+                graph_bbox = (north, south, east, west)
+    else:
+        # No bbox provided (address-based), calculate from graph
+        if len(G.nodes()) > 0:
+            latitudes = [G.nodes[n]['y'] for n in G.nodes()]
+            longitudes = [G.nodes[n]['x'] for n in G.nodes()]
+            north, south = max(latitudes), min(latitudes)
+            east, west = max(longitudes), min(longitudes)
+            graph_bbox = (north, south, east, west)
+
+    # If uploaded file path is provided, parse CSV and map coordinates to nodes
+    if uploaded_file_path and os.path.exists(uploaded_file_path):
+        print(f"📂 Reading uploaded coordinates from: {uploaded_file_path}")
+        
+        # Validate bounding box exists
+        if not graph_bbox:
+            raise ValueError(
+                "⚠️  BOUNDING BOX ERROR:\n"
+                "   Cannot validate uploaded coordinates: bounding box information is not available.\n"
+                "   Please ensure you have selected a valid area for network extraction."
+            )
+        
+        north, south, east, west = graph_bbox
+        print(f"   Selected region bounding box: North={north:.6f}, South={south:.6f}, East={east:.6f}, West={west:.6f}")
+        
+        try:
+            with open(uploaded_file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Check if first line is header
+            data_start_index = 0
+            if len(lines) > 0:
+                header_line = lines[0].lower().strip()
+                if 'id' in header_line and 'type' in header_line and ('x' in header_line or 'latitude' in header_line):
+                    data_start_index = 1
+                    print("   Found header row, skipping...")
+            
+            # Collect coordinates for validation
+            uploaded_coords = []
+            invalid_coords = []
+            
+            # Parse CSV rows
+            for i in range(data_start_index, len(lines)):
+                line = lines[i].strip()
+                if not line:
+                    continue
+                
+                # Handle both comma and tab separators
+                parts = [p.strip() for p in line.split(',') if p.strip()]
+                if len(parts) < 3:
+                    continue
+                
+                try:
+                    # Expected format: id,type,x,y,demand,service_time
+                    # or: id,type,latitude,longitude,demand,service_time
+                    row_id = parts[0]
+                    node_type = parts[1].lower()
+                    x = float(parts[2])  # longitude
+                    y = float(parts[3])  # latitude
+                    
+                    # Validate coordinate is within bounding box
+                    if not (south <= y <= north and west <= x <= east):
+                        invalid_coords.append({
+                            'id': row_id,
+                            'type': node_type,
+                            'lat': y,
+                            'lon': x,
+                            'line': i + 1
+                        })
+                        logging.warning(
+                            f"Coordinate outside selected region: Row {i+1}, ID={row_id}, "
+                            f"Type={node_type}, Lat={y:.6f}, Lon={x:.6f}. "
+                            f"Region bounds: Lat [{south:.6f}, {north:.6f}], Lon [{west:.6f}, {east:.6f}]"
+                        )
+                        continue  # Skip this coordinate
+                    
+                    # Store valid coordinate for processing
+                    coord_data = {
+                        'id': row_id,
+                        'type': node_type,
+                        'x': x,
+                        'y': y,
+                        'demand': None,
+                        'service_time': None,
+                        'line': i + 1
+                    }
+                    
+                    # Get demand and service_time if provided (columns 4 and 5)
+                    if len(parts) >= 5:
+                        try:
+                            coord_data['demand'] = float(parts[4])
+                        except (ValueError, IndexError):
+                            pass
+                    if len(parts) >= 6:
+                        try:
+                            coord_data['service_time'] = float(parts[5])
+                        except (ValueError, IndexError):
+                            pass
+                    
+                    uploaded_coords.append(coord_data)
+                    
+                except (ValueError, IndexError) as e:
+                    logging.warning(f"Skipping invalid line {i+1} in uploaded file: {line[:50]}... Error: {str(e)}")
+                    continue
+            
+            # If there are invalid coordinates, raise an error with details
+            if invalid_coords:
+                invalid_list = "\n   ".join([
+                    f"Row {c['line']}: ID={c['id']}, Type={c['type']}, "
+                    f"Lat={c['lat']:.6f}, Lon={c['lon']:.6f}"
+                    for c in invalid_coords[:10]  # Show first 10
+                ])
+                if len(invalid_coords) > 10:
+                    invalid_list += f"\n   ... and {len(invalid_coords) - 10} more"
+                
+                error_msg = (
+                    f"⚠️  COORDINATE VALIDATION ERROR:\n"
+                    f"   Found {len(invalid_coords)} coordinate(s) in uploaded file that are OUTSIDE the selected region.\n\n"
+                    f"   Selected Region Bounding Box:\n"
+                    f"   - Latitude range: [{south:.6f}, {north:.6f}]\n"
+                    f"   - Longitude range: [{west:.6f}, {east:.6f}]\n\n"
+                    f"   Invalid Coordinates:\n"
+                    f"   {invalid_list}\n\n"
+                    f"   SOLUTIONS:\n"
+                    f"   1. Ensure all coordinates in your uploaded file are within the selected region\n"
+                    f"   2. Expand the selected region to cover all your coordinates\n"
+                    f"   3. Remove or correct the coordinates that are outside the region"
+                )
+                print(error_msg)
+                if timing_log_file:
+                    timing_log_file.write(f"\n{'='*60}\n")
+                    timing_log_file.write(f"COORDINATE VALIDATION ERROR\n")
+                    timing_log_file.write(f"{error_msg}\n")
+                    timing_log_file.write(f"{'='*60}\n")
+                raise ValueError(error_msg)
+            
+            # Now process valid coordinates
+            for coord_data in uploaded_coords:
+                x = coord_data['x']
+                y = coord_data['y']
+                node_type = coord_data['type']
+                demand = coord_data['demand']
+                service_time = coord_data['service_time']
+                
+                # Map coordinate to nearest node in graph
+                # OSMnx uses (lon, lat) order, which matches our x, y
+                nearest_node = ox.distance.nearest_nodes(G, x, y)
+                
+                # Add to appropriate list
+                if node_type == 'd' or node_type == 'depot':
+                    if nearest_node not in depot_nodes:
+                        depot_nodes.add(nearest_node)
+                        if demand is not None or service_time is not None:
+                            custom_node_data[nearest_node] = {}
+                            if demand is not None:
+                                custom_node_data[nearest_node]['demand'] = demand
+                            if service_time is not None:
+                                custom_node_data[nearest_node]['service_time'] = service_time
+                elif node_type == 'c' or node_type == 'customer':
+                    if nearest_node not in customer_nodes:
+                        customer_nodes.add(nearest_node)
+                        if demand is not None or service_time is not None:
+                            custom_node_data[nearest_node] = {}
+                            if demand is not None:
+                                custom_node_data[nearest_node]['demand'] = demand
+                            if service_time is not None:
+                                custom_node_data[nearest_node]['service_time'] = service_time
+            
+            print(f"   ✓ Parsed {len(depot_nodes)} depots and {len(customer_nodes)} customers from uploaded file")
+            print(f"   ✓ All {len(uploaded_coords)} coordinates validated and within selected region")
+            if custom_node_data:
+                print(f"   ✓ Found custom demands/service_times for {len(custom_node_data)} nodes")
+            
+        except ValueError:
+            # Re-raise ValueError (our validation error)
+            raise
+        except Exception as e:
+            logging.error(f"Error reading uploaded file: {str(e)}")
+            raise ValueError(f"⚠️  Error reading uploaded coordinates file: {str(e)}")
+    
     # Function to add nodes while ensuring no overlap
     def add_unique_nodes(nodes_set, pois, num_required, used_nodes, node_type_name="nodes"):
         # First, try to use POIs
@@ -771,14 +987,28 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
 
     # Initialize used nodes set
     used_nodes = set()
+    
+    # If we have nodes from uploaded file, mark them as used
+    used_nodes.update(depot_nodes)
+    used_nodes.update(customer_nodes)
 
-    # Add unique depot nodes
-    add_unique_nodes(depot_nodes, depot_pois, num_depots, used_nodes, "depots")
+    # Add unique depot nodes (only if not already set from uploaded file)
+    if len(depot_nodes) < num_depots:
+        add_unique_nodes(depot_nodes, depot_pois, num_depots, used_nodes, "depots")
+    elif len(depot_nodes) > num_depots:
+        # If more depots than requested, take only the first num_depots
+        depot_nodes = set(list(depot_nodes)[:num_depots])
+        used_nodes = set(depot_nodes) | set(customer_nodes)
 
-    # Add unique customer nodes
-    add_unique_nodes(customer_nodes, customer_pois, num_customers, used_nodes, "customers")
+    # Add unique customer nodes (only if not already set from uploaded file)
+    if len(customer_nodes) < num_customers:
+        add_unique_nodes(customer_nodes, customer_pois, num_customers, used_nodes, "customers")
+    elif len(customer_nodes) > num_customers:
+        # If more customers than requested, take only the first num_customers
+        customer_nodes = set(list(customer_nodes)[:num_customers])
+        used_nodes = set(depot_nodes) | set(customer_nodes)
 
-    # Add unique charging station nodes
+    # Add unique charging station nodes (always generated randomly, as per UI note)
     add_unique_nodes(charging_station_nodes, charging_station_pois, num_charging_stations, used_nodes, "charging stations")
 
     # Convert sets to lists for consistency
@@ -792,7 +1022,11 @@ def categorize_nodes(G, num_depots, num_customers, num_charging_stations, area_n
     # Exclude depots, customers, and charging stations from crossings
     crossings = [node for node in crossings if node not in used_nodes]
 
-    return depot_nodes, customer_nodes, charging_station_nodes, crossings, len(crossings), message  
+    # Update message if using uploaded file
+    if uploaded_file_path:
+        message = f"Using {len(depot_nodes)} depots and {len(customer_nodes)} customers from uploaded file."
+
+    return depot_nodes, customer_nodes, charging_station_nodes, crossings, len(crossings), message, custom_node_data  
 
 
 def assign_edge_attributes(G):
@@ -998,6 +1232,10 @@ def main():
                         help='User-Agent string from the browser')
     parser.add_argument('--user_referer', type=str, default='',
                         help='HTTP Referer header')
+    
+    # 6) Uploaded file path (for custom coordinates)
+    parser.add_argument('--uploaded_file_path', type=str, default=None,
+                        help='Path to uploaded CSV file with custom coordinates')
 
     args = parser.parse_args()
 
@@ -1101,6 +1339,11 @@ def main():
     timing_log_file.write(f"Number of Customers: {num_customers}\n")
     timing_log_file.write(f"Number of Charging Stations: {num_cs}\n")
     timing_log_file.write(f"Customer Choice: {customer_tag_value}\n")
+    if args.uploaded_file_path:
+        timing_log_file.write(f"Uploaded File: {args.uploaded_file_path}\n")
+        timing_log_file.write(f"Generation Mode: Upload (Custom Coordinates)\n")
+    else:
+        timing_log_file.write(f"Generation Mode: Random (POI-based)\n")
     
     timing_log_file.write(f"\n--- DEMAND CONFIGURATION ---\n")
     timing_log_file.write(f"Demand Option: {args.demand_option}\n")
@@ -1194,8 +1437,8 @@ def main():
 
         # TIMED: Categorize nodes (find POIs, depots, customers, etc.)
         with timer("3. Categorize Nodes (Find POIs, Depots, Customers, Charging Stations)"):
-            depots, customers, charging_stations, crossings, crossings_count_before, location_message = \
-                categorize_nodes(G, num_depots, num_customers, num_cs, area_name, customer_tag_value, bbox)
+            depots, customers, charging_stations, crossings, crossings_count_before, location_message, custom_node_data = \
+                categorize_nodes(G, num_depots, num_customers, num_cs, area_name, customer_tag_value, bbox, args.uploaded_file_path)
 
         print(location_message)
 
@@ -1296,7 +1539,8 @@ def main():
                 service_time_option=args.service_time_option,
                 service_time_constant=args.service_time_constant,
                 service_time_min=args.service_time_min,
-                service_time_max=args.service_time_max
+                service_time_max=args.service_time_max,
+                custom_node_data=custom_node_data
             )
 
         # TIMED: Duplicate nodes as junctions

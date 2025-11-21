@@ -57,3 +57,7 @@ allfiles.tgz
 *.tmp
 *.bak
 *.backup
+
+# Temporary uploads directory
+backend/temp_uploads/
+temp_uploads/

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./App.css";
 import { Bar } from "react-chartjs-2";
@@ -60,6 +60,12 @@ function App() {
   const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [runTour, setRunTour] = useState(false);
+  
+  // Generation mode state: 'random' or 'upload'
+  const [generationMode, setGenerationMode] = useState('random');
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [fileStats, setFileStats] = useState({ depots: 0, customers: 0 });
+  const fileInputRef = useRef(null);
 
   // API Base URL - uses environment variable or same origin (works in both dev and production)
   const API_BASE_URL = process.env.REACT_APP_API_URL || window.location.origin;
@@ -78,6 +84,7 @@ function App() {
     formatted = formatted.replace(/(INSUFFICIENT[^:]+:)/g, '<strong>$1</strong>');
     formatted = formatted.replace(/(SOLUTIONS?:)/g, '<strong>$1</strong>');
     formatted = formatted.replace(/(ASSIGNMENT ERROR:)/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/(COORDINATE VALIDATION ERROR:)/g, '<strong>$1</strong>');
     
     // Style numbered lists (1., 2., 3., etc.)
     formatted = formatted.replace(/(\d+\.\s)/g, '<strong>$1</strong>');
@@ -102,6 +109,101 @@ function App() {
     }));
   };
 
+  // Handle file upload and parsing
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadedFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      try {
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        
+        // Check if first line is header
+        const headerLine = lines[0].toLowerCase();
+        let dataStartIndex = 0;
+        if (headerLine.includes('id') && headerLine.includes('type') && 
+            (headerLine.includes('x') || headerLine.includes('latitude'))) {
+          dataStartIndex = 1; // Skip header
+        }
+
+        // Parse CSV
+        let depots = 0;
+        let customers = 0;
+        
+        for (let i = dataStartIndex; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          // Handle both comma and tab separators
+          const parts = line.split(/[,\t]/).map(p => p.trim());
+          
+          // Look for type column (could be index 1 or by header)
+          // Format: id,type,x,y,demand,service_time
+          // Or: id,type,latitude,longitude,demand,service_time
+          if (parts.length >= 3) {
+            const typeValue = parts[1].toLowerCase();
+            if (typeValue === 'd' || typeValue === 'depot') {
+              depots++;
+            } else if (typeValue === 'c' || typeValue === 'customer') {
+              customers++;
+            }
+          }
+        }
+
+        setFileStats({ depots, customers });
+        
+        // Auto-update form data with counts
+        setFormData((prev) => ({
+          ...prev,
+          numDepots: depots > 0 ? depots : prev.numDepots,
+          numCustomers: customers > 0 ? customers : prev.numCustomers,
+        }));
+      } catch (error) {
+        console.error('Error parsing file:', error);
+        setFileStats({ depots: 0, customers: 0 });
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Download template CSV file
+  const downloadTemplate = () => {
+    const templateContent = `id,type,x,y,demand,service_time
+0,d,2.1011217,41.5661504,0,0.0
+1,c,2.0816034,41.5565825,120,0.5
+2,c,2.1091703,41.5462223,90,0.5`;
+
+    const blob = new Blob([templateContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'coordinate_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Clear uploaded file
+  const clearUploadedFile = () => {
+    setUploadedFile(null);
+    setFileStats({ depots: 0, customers: 0 });
+    // Reset file input element
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    // Reset to default values
+    setFormData((prev) => ({
+      ...prev,
+      numDepots: 1,
+      numCustomers: 10,
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -113,10 +215,40 @@ function App() {
     setIsDrawerCollapsed(false);
 
     try {
+      // Prepare request data
+      const requestData = { ...formData, generationMode };
+      
+      // If upload mode, include file data
+      if (generationMode === 'upload' && uploadedFile) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const fileContent = event.target.result;
+          requestData.uploadedFileContent = fileContent;
+          requestData.uploadedFileName = uploadedFile.name;
+          
+          // Send request with file content
+          await sendGenerationRequest(requestData);
+        };
+        reader.readAsText(uploadedFile);
+        return; // Exit early, request will be sent from reader.onload
+      } else {
+        // Normal random generation
+        await sendGenerationRequest(requestData);
+      }
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      setResponseMessage("An error occurred while processing your request.");
+      setLoading(false);
+    }
+  };
+
+  // Separate function to send the actual request
+  const sendGenerationRequest = async (requestData) => {
+    try {
       const response = await fetch(`${API_BASE_URL}/generate-instance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(requestData),
       });
 
       const data = await response.json();
@@ -143,6 +275,9 @@ function App() {
             data.message || "Error occurred while generating the instance."
           );
         }
+        // Show results drawer even on error so user can see the error message
+        setShowResultsDrawer(true);
+        setIsDrawerCollapsed(false);
       }
     } catch (error) {
       console.error("Error submitting form:", error);
@@ -343,8 +478,92 @@ function App() {
                 General Settings
               </Accordion.Header>
                   <Accordion.Body>
+                    {/* Generation Mode Toggle */}
+                    <div className="mb-4">
+                      <label className="form-label fw-bold">Generation Mode:</label>
+                      <div className="generation-mode-toggle">
+                        <button
+                          type="button"
+                          className={`mode-toggle-btn ${generationMode === 'random' ? 'active' : ''}`}
+                          onClick={() => {
+                            setGenerationMode('random');
+                            clearUploadedFile();
+                          }}
+                        >
+                          🎲 Generate Random
+                        </button>
+                        <button
+                          type="button"
+                          className={`mode-toggle-btn ${generationMode === 'upload' ? 'active' : ''}`}
+                          onClick={() => setGenerationMode('upload')}
+                        >
+                          📂 Upload File
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* File Upload Section - Only shown in upload mode */}
+                    {generationMode === 'upload' && (
+                      <div className="mb-4 p-3 border rounded bg-light">
+                        <label className="form-label fw-bold">Upload Coordinates File:</label>
+                        <div className="mb-2">
+                          <input
+                            type="file"
+                            accept=".csv,.txt"
+                            className="form-control"
+                            onChange={handleFileUpload}
+                            id="coordinateFileInput"
+                            ref={fileInputRef}
+                          />
+                        </div>
+                        {uploadedFile && (
+                          <div className="mb-2">
+                            <div className="d-flex justify-content-between align-items-center">
+                              <small className="text-success">
+                                ✓ File uploaded: <strong>{uploadedFile.name}</strong>
+                              </small>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={clearUploadedFile}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            {(fileStats.depots > 0 || fileStats.customers > 0) && (
+                              <div className="mt-2">
+                                <small className="text-muted">
+                                  Found: <strong>{fileStats.depots}</strong> depot(s), <strong>{fileStats.customers}</strong> customer(s)
+                                </small>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={downloadTemplate}
+                          >
+                            📥 Download Template
+                          </button>
+                          <small className="text-muted d-block mt-1">
+                            Format: id,type,x,y,demand,service_time (type: 'd' for depot, 'c' for customer)
+                          </small>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Area Selection - Always visible, but with note in upload mode */}
                     <div className="mb-3">
-                      <label className="form-label">Select Area Method:</label>
+                      <label className="form-label">
+                        {generationMode === 'upload' ? 'Map Region (for context):' : 'Select Area Method:'}
+                      </label>
+                      {generationMode === 'upload' && (
+                        <small className="text-muted d-block mb-2">
+                          Define the map region to extract the road network. Your uploaded coordinates should be within this area.
+                        </small>
+                      )}
                       <div>
                         <div className="form-check">
                           <input
@@ -442,6 +661,8 @@ function App() {
                   </Accordion.Body>
                 </Accordion.Item>
 
+                {/* Node Settings - Hidden/Disabled in upload mode */}
+                {generationMode === 'random' && (
                 <Accordion.Item eventKey="2">
                   <Accordion.Header>
                     <span className="accordion-icon">📦</span>
@@ -544,8 +765,77 @@ function App() {
 
                   </Accordion.Body>
                 </Accordion.Item>
+                )}
 
+                {/* Node Settings - Read-only in upload mode */}
+                {generationMode === 'upload' && (
+                <Accordion.Item eventKey="2">
+                  <Accordion.Header>
+                    <span className="accordion-icon">📦</span>
+                    Node Settings (from file)
+                  </Accordion.Header>
+                  <Accordion.Body>
+                    <div className="mb-3">
+                      <label className="form-label">Number of Depots:</label>
+                      <input
+                        type="number"
+                        name="numDepots"
+                        className="form-control"
+                        value={formData.numDepots}
+                        onChange={handleChange}
+                        min="1"
+                        disabled
+                        style={{ backgroundColor: '#e9ecef', cursor: 'not-allowed' }}
+                      />
+                      <small className="text-muted">Set automatically from uploaded file</small>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Number of Customers:</label>
+                      <input
+                        type="number"
+                        name="numCustomers"
+                        className="form-control"
+                        value={formData.numCustomers}
+                        onChange={handleChange}
+                        min="1"
+                        disabled
+                        style={{ backgroundColor: '#e9ecef', cursor: 'not-allowed' }}
+                      />
+                      <small className="text-muted">Set automatically from uploaded file</small>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Number of Charging Stations:</label>
+                      <input
+                        type="number"
+                        name="numChargingStations"
+                        className="form-control"
+                        value={formData.numChargingStations}
+                        onChange={handleChange}
+                        min="1"
+                        required
+                      />
+                      <small className="text-muted">Charging stations will be generated randomly</small>
+                    </div>
+                    {/* Added Charging Station Choice Dropdown */}
+                    <div className="mb-3">
+                      <label className="form-label">Charging Station Choice:</label>
+                      <select
+                        name="chargingStationChoice"
+                        className="form-select"
+                        value={formData.chargingStationChoice}
+                        onChange={handleChange}
+                      >
+                        <option value="default">
+                          Default (Gas Stations, Charging Stations)
+                        </option>
+                      </select>
+                    </div>
+                  </Accordion.Body>
+                </Accordion.Item>
+                )}
 
+                {/* Customer Demand - Hidden in upload mode */}
+                {generationMode === 'random' && (
                 <Accordion.Item eventKey="3">
                   <Accordion.Header>
                     <span className="accordion-icon">📊</span>
@@ -602,6 +892,10 @@ function App() {
                     )}
                   </Accordion.Body>
                 </Accordion.Item>
+                )}
+
+                {/* Service Time - Hidden in upload mode */}
+                {generationMode === 'random' && (
                 <Accordion.Item eventKey="4">
                   <Accordion.Header>
                     <span className="accordion-icon">⏱️</span>
@@ -666,6 +960,7 @@ function App() {
                     )}
                   </Accordion.Body>
                 </Accordion.Item>
+                )}
                 <Accordion.Item eventKey="5">
                   <Accordion.Header>
                     <span className="accordion-icon">🚗</span>
@@ -854,7 +1149,7 @@ function App() {
         </div>
 
         {/* Results Drawer - Slides up from bottom */}
-        {showResultsDrawer && summaryData && (
+        {showResultsDrawer && (summaryData || responseMessage) && (
           <div className={`results-drawer ${isDrawerCollapsed ? 'collapsed' : ''}`}>
             <div className="results-drawer-header">
               <div 
@@ -891,6 +1186,7 @@ function App() {
                       responseMessage.includes('⚠️') || 
                       responseMessage.includes('INSUFFICIENT') || 
                       responseMessage.includes('ASSIGNMENT ERROR') ||
+                      responseMessage.includes('COORDINATE VALIDATION ERROR') ||
                       responseMessage.includes('SOLUTIONS')
                         ? 'alert-danger' 
                         : 'alert-info'

@@ -467,3 +467,54 @@
     filter: grayscale(0%);
     transform: scale(1.05);
   }
+
+  /* =========================================
+     Generation Mode Toggle
+     ========================================= */
+  
+  .generation-mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 0.25rem;
+    background-color: #f8f9fa;
+  }
+  
+  .mode-toggle-btn {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: none;
+    background-color: transparent;
+    color: #495057;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  
+  .mode-toggle-btn:hover {
+    background-color: #e9ecef;
+    color: #212529;
+  }
+  
+  .mode-toggle-btn.active {
+    background-color: #0d6efd;
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(13, 110, 253, 0.3);
+  }
+  
+  .mode-toggle-btn.active:hover {
+    background-color: #0b5ed7;
+    box-shadow: 0 3px 6px rgba(13, 110, 253, 0.4);
+  }
+  
+  .mode-toggle-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+  }

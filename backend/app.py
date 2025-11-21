@@ -117,6 +117,9 @@ def generate_instance():
     # Seed for the random number generator
     random_seed = data.get('randomSeed', 42)  # default = 42 if not provided
 
+    # Generation mode: 'random' or 'upload'
+    generation_mode = data.get('generationMode', 'random')  # default to 'random' for backward compatibility
+
     # Capture user information from request
     # Get IP address (handles proxy/load balancer)
     user_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('HTTP_X_REAL_IP', request.remote_addr))
@@ -129,6 +132,7 @@ def generate_instance():
     user_agent = request.headers.get('User-Agent', 'Unknown')
     user_referer = request.headers.get('Referer', 'Direct')
 
+    uploaded_file_path = None
     try:
         # Get the directory where app.py is located (this is where create_instance.py also is)
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -137,6 +141,31 @@ def generate_instance():
         output_base = os.path.join(script_dir, "created_datasets")
         if not os.path.exists(output_base):
             os.makedirs(output_base)
+
+        # Handle file upload if in upload mode
+        if generation_mode == 'upload' and data.get('uploadedFileContent'):
+            # Create temp_uploads directory if it doesn't exist
+            temp_uploads_dir = os.path.join(script_dir, "temp_uploads")
+            if not os.path.exists(temp_uploads_dir):
+                os.makedirs(temp_uploads_dir)
+            
+            # Generate unique filename based on instance name and timestamp
+            safe_instance_name = instance_name.replace(" ", "_") if instance_name else "instance"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            uploaded_file_path = os.path.join(temp_uploads_dir, f"{safe_instance_name}_{timestamp}_coords.csv")
+            
+            # Write uploaded file content to temporary file
+            try:
+                with open(uploaded_file_path, 'w', encoding='utf-8') as f:
+                    f.write(data['uploadedFileContent'])
+                logger.info(f"Saved uploaded file to: {uploaded_file_path}")
+            except Exception as e:
+                logger.error(f"Error saving uploaded file: {str(e)}")
+                return jsonify({
+                    "message": f"Error saving uploaded file: {str(e)}",
+                    "error": True,
+                    "type": "file_error"
+                }), 500
 
         # Prepare command for subprocess
         command = ["python", "create_instance.py"]
@@ -180,6 +209,10 @@ def generate_instance():
         
         if show_arrows:
             command.append("--show_arrows")
+
+        # Add uploaded file path if in upload mode
+        if generation_mode == 'upload' and uploaded_file_path:
+            command.extend(["--uploaded_file_path", uploaded_file_path])
 
         print("Command: ", command)
 
@@ -235,7 +268,7 @@ def generate_instance():
         stdout_output = process.stdout
         location_message = "Instance generated successfully."  # Default fallback
         for line in stdout_output.split("\n"):
-            if "Successfully found" in line or "The rest selected randomly" in line:
+            if "Successfully found" in line or "The rest selected randomly" in line or "Using" in line and "from uploaded file" in line:
                 location_message = line.strip()
                 break
 
@@ -344,6 +377,14 @@ def generate_instance():
         return jsonify(response)
 
     except Exception as e:
+        # Clean up temporary uploaded file if it exists (even on error)
+        if uploaded_file_path and os.path.exists(uploaded_file_path):
+            try:
+                os.remove(uploaded_file_path)
+                logger.info(f"Cleaned up temporary file after error: {uploaded_file_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Could not remove temporary file {uploaded_file_path}: {str(cleanup_error)}")
+        
         error_msg = str(e)
         # Remove "Error: " prefix if present
         if error_msg.startswith("Error: "):

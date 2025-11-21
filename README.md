@@ -95,13 +95,20 @@ If you use this EVRP Instance Generator in your research or projects, please con
 
 ```latex
 
-@article{akbay_blum_evrp2025,
-  title   = {EVRPGen: A Web-Based Instance Generator for the Electric Vehicle Routing Problem with Road Junctions and Road Types},
-  author  = {Mehmet Anil Akbay and Christian Blum},
-  journal = {Software Impacts},
-  year    = {2025},
-  note    = {Under review}
+@article{AKBAY2025100778,
+title = {EVRPGen: A web-based instance generator for the electric vehicle routing problem with road junctions and road types},
+journal = {Software Impacts},
+volume = {25},
+pages = {100778},
+year = {2025},
+issn = {2665-9638},
+doi = {https://doi.org/10.1016/j.simpa.2025.100778},
+url = {https://www.sciencedirect.com/science/article/pii/S2665963825000387},
+author = {Mehmet Anil Akbay and Christian Blum},
+keywords = {Electric vehicle routing problem (EVRP), Instance generation, OpenStreetMap (OSM), Road network analysis, Sustainable logistics, Web application},
+abstract = {This paper presents a web-based instance generator for Electric Vehicle Routing Problems (EVRP) with Road Junctions and Road Types, using OpenStreetMap data. Users define an area, specify network components (depots, customers, charging stations, junctions), and customize vehicle parameters. The React-based frontend enables configuration, visualization, and queries, while the Flask backend processes road networks, classifies road types, and assigns demand and service times. A RESTful API ensures real-time instance generation. Generated instances can be downloaded as text-based datasets and interactive visualizations. The tool is open-source and contributes to the area of sustainable transportation by enabling scenario-based EVRP experimentation.}
 }
+
 
 @misc{akbay_blum_evrp2025,
   title   = {EVRPGen: A Web-Based Instance Generator for the Electric Vehicle Routing Problem with Road Junctions and Road Types},
