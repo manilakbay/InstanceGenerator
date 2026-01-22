@@ -1355,12 +1355,14 @@ function App() {
                   <h6 className="mt-2 mb-1">Guillem Rodriguez Corominas</h6>
                   <p className="team-role mb-1">Technician</p>
                   <a
-                    href="mailto:grodriguez@iiia.csic.es"
+                    href="https://www.iiia.csic.es/es/people/person/?person_id=154"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-decoration-none small"
                     style={{ color: '#0d6efd' }}
                   >
-                    grodriguez@iiia.csic.es
-                  </a>
+                     IIIA-CSIC Profile
+                  </a>                  
                 </div>
               </div>
             </div>
