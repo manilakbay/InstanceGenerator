@@ -2,6 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+
+    <!-- Polyfill for older browsers that don't support crypto.randomUUID() -->
+    <script>
+      /**
+       * Polyfill for crypto.randomUUID() for older browsers.
+       * Uses crypto.getRandomValues() when available.
+       */
+      (function () {
+        if (typeof window === "undefined") return;
+        const c = window.crypto || window.msCrypto;
+        if (!c) return;
+
+        if (!c.randomUUID) {
+          c.randomUUID = function () {
+            const bytes = new Uint8Array(16);
+            c.getRandomValues(bytes);
+
+            // RFC4122 version 4
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+            const hex = Array.from(bytes, (b) =>
+              b.toString(16).padStart(2, "0")
+            );
+            return (
+              hex.slice(0, 4).join("") +
+              "-" +
+              hex.slice(4, 6).join("") +
+              "-" +
+              hex.slice(6, 8).join("") +
+              "-" +
+              hex.slice(8, 10).join("") +
+              "-" +
+              hex.slice(10, 16).join("")
+            );
+          };
+        }
+      })();
+    </script>
+
     <link rel="icon" type="image/x-icon" href="%PUBLIC_URL%/favicon.ico" />
     <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32x32.png" />

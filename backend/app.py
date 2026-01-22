@@ -66,6 +66,28 @@ def health_check():
             "timestamp": datetime.now().isoformat()
         }), 503
 
+@app.route('/photos/<path:filename>')
+def serve_photos(filename):
+    """Serve photos from frontend_dist/photos/"""
+    photos_dir = os.path.join(app.static_folder, 'photos')
+    file_path = os.path.join(photos_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(photos_dir, filename)
+    else:
+        logger.warning(f"Photo not found: {filename} in {photos_dir}")
+        return jsonify({"error": "Photo not found"}), 404
+
+@app.route('/logos/<path:filename>')
+def serve_logos(filename):
+    """Serve logos from frontend_dist/logos/"""
+    logos_dir = os.path.join(app.static_folder, 'logos')
+    file_path = os.path.join(logos_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(logos_dir, filename)
+    else:
+        logger.warning(f"Logo not found: {filename} in {logos_dir}")
+        return jsonify({"error": "Logo not found"}), 404
+
 #Catch-all route for React Single-Page App
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

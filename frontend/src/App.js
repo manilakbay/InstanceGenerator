@@ -1301,7 +1301,7 @@ function App() {
             <h5 className="text-center mb-4">The Research Team</h5>
             <div className="row g-3">
               {/* Mehmet Anil AKBAY */}
-              <div className="col-6">
+              <div className="col-4">
                 <div className="team-member-card text-center">
                   <img
                     src="/photos/photo_mehmet.jpg"
@@ -1323,7 +1323,7 @@ function App() {
               </div>
 
               {/* Christian Blum */}
-              <div className="col-6">
+              <div className="col-4">
                 <div className="team-member-card text-center">
                   <img
                     src="/photos/cblum_small.png"
@@ -1340,6 +1340,26 @@ function App() {
                     style={{ color: '#0d6efd' }}
                   >
                     IIIA-CSIC Profile
+                  </a>
+                </div>
+              </div>
+
+              {/* Guillem Rodriguez Corominas */}
+              <div className="col-4">
+                <div className="team-member-card text-center">
+                  <img
+                    src="/photos/photo_guillem.jpg"
+                    alt="Guillem Rodriguez Corominas"
+                    className="team-avatar"
+                  />
+                  <h6 className="mt-2 mb-1">Guillem Rodriguez Corominas</h6>
+                  <p className="team-role mb-1">Technician</p>
+                  <a
+                    href="mailto:grodriguez@iiia.csic.es"
+                    className="text-decoration-none small"
+                    style={{ color: '#0d6efd' }}
+                  >
+                    grodriguez@iiia.csic.es
                   </a>
                 </div>
               </div>
