@@ -1464,6 +1464,11 @@ function App() {
               alt="MICIU AEI Logo"
               className="affiliation-logo"
             />
+            <img
+              src="/logos/Momentum-logo.png"
+              alt="Momentum Logo"
+              className="affiliation-logo"
+            />
           </div>
         </Modal.Body>
         <Modal.Footer>
